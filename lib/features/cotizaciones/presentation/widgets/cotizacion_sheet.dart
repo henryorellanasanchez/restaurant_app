@@ -1,0 +1,396 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:restaurant_app/core/constants/app_constants.dart';
+import 'package:restaurant_app/core/theme/app_colors.dart';
+import 'package:restaurant_app/features/cotizaciones/presentation/providers/cotizacion_cart_provider.dart';
+import 'package:restaurant_app/features/cotizaciones/presentation/providers/cotizacion_provider.dart';
+import 'package:restaurant_app/features/reservaciones/presentation/providers/reservas_provider.dart';
+
+/// Hoja inferior para crear cotizacion desde el menu publico.
+class CotizacionSheet extends ConsumerStatefulWidget {
+  final String? mesaId;
+
+  const CotizacionSheet({super.key, this.mesaId});
+
+  static Future<void> show(BuildContext context, {String? mesaId}) {
+    return showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => CotizacionSheet(mesaId: mesaId),
+    );
+  }
+
+  @override
+  ConsumerState<CotizacionSheet> createState() => _CotizacionSheetState();
+}
+
+class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
+  final _nombreCtrl = TextEditingController();
+  final _telefonoCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _fechaEventoCtrl = TextEditingController();
+  final _personasCtrl = TextEditingController();
+  final _comidaCtrl = TextEditingController();
+  final _notasCtrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _reservaLocal = false;
+  DateTime? _fechaEvento;
+
+  @override
+  void dispose() {
+    _nombreCtrl.dispose();
+    _telefonoCtrl.dispose();
+    _emailCtrl.dispose();
+    _fechaEventoCtrl.dispose();
+    _personasCtrl.dispose();
+    _comidaCtrl.dispose();
+    _notasCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cart = ref.watch(cotizacionCartProvider);
+    final cotState = ref.watch(cotizacionProvider);
+    final reservasState = ref.watch(reservasProvider);
+    final reservasEnFecha = _fechaEvento == null
+        ? const <String>[]
+        : reservasState.reservasMes
+              .where((r) => r.fecha == _formatDate(_fechaEvento!))
+              .map((r) => r.id)
+              .toList();
+    final fechaOcupada = reservasEnFecha.isNotEmpty;
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.request_quote_outlined),
+                const SizedBox(width: 8),
+                const Text(
+                  'Cotizacion para evento',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const Divider(),
+            if (cart.items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text('Agrega productos para cotizar.'),
+              ),
+            if (cart.items.isNotEmpty)
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: cart.items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final item = cart.items[i];
+                    return ListTile(
+                      title: Text(item.producto.nombre),
+                      subtitle: Text(
+                        '${AppConstants.currencySymbol}${item.producto.precio.toStringAsFixed(2)}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () => ref
+                                .read(cotizacionCartProvider.notifier)
+                                .decrement(item.producto.id),
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                          Text('${item.cantidad}'),
+                          IconButton(
+                            onPressed: () => ref
+                                .read(cotizacionCartProvider.notifier)
+                                .increment(item.producto.id),
+                            icon: const Icon(Icons.add_circle_outline),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            if (cart.items.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Subtotal', style: TextStyle(fontSize: 14)),
+                  Text(
+                    '${AppConstants.currencySymbol}${cart.subtotal.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Total estimado', style: TextStyle(fontSize: 14)),
+                  Text(
+                    '${AppConstants.currencySymbol}${cart.subtotal.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _nombreCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _telefonoCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Telefono',
+                        prefixIcon: Icon(Icons.call_outlined),
+                      ),
+                      keyboardType: TextInputType.phone,
+                      validator: (v) =>
+                          (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _emailCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Correo',
+                        prefixIcon: Icon(Icons.email_outlined),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) =>
+                          _validEmail(v) ? null : 'Correo electronico invalido',
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Reservar local para evento'),
+                      value: _reservaLocal,
+                      onChanged: (val) => setState(() => _reservaLocal = val),
+                    ),
+                    TextFormField(
+                      controller: _fechaEventoCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Fecha del evento',
+                        prefixIcon: Icon(Icons.event_outlined),
+                      ),
+                      readOnly: true,
+                      onTap: () => _pickFechaEvento(context),
+                      validator: (v) {
+                        if (_reservaLocal && (v == null || v.trim().isEmpty)) {
+                          return 'Indica la fecha del evento';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (_reservaLocal && _fechaEvento != null) ...[
+                      const SizedBox(height: 6),
+                      _buildDisponibilidad(
+                        isLoading: reservasState.isLoading,
+                        ocupada: fechaOcupada,
+                        total: reservasEnFecha.length,
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _personasCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Cantidad de personas (opcional)',
+                        prefixIcon: Icon(Icons.groups_outlined),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (v) {
+                        if (_reservaLocal && (v == null || v.trim().isEmpty)) {
+                          return 'Indica la cantidad de personas';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _comidaCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Comida o menu preferido (opcional)',
+                        prefixIcon: Icon(Icons.restaurant_menu_outlined),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _notasCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Notas adicionales (opcional)',
+                        prefixIcon: Icon(Icons.notes_outlined),
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: cotState.isSaving ? null : _crearCotizacion,
+                  child: cotState.isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Generar cotizacion'),
+                ),
+              ),
+              if (cotState.errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  cotState.errorMessage!,
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              ],
+            ],
+            const SizedBox(height: 12),
+            _buildContactCard(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _validEmail(String? email) {
+    final value = email?.trim() ?? '';
+    final regex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    return value.isNotEmpty && regex.hasMatch(value);
+  }
+
+  Future<void> _pickFechaEvento(BuildContext context) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fechaEvento ?? now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 2),
+    );
+    if (picked == null) return;
+    setState(() {
+      _fechaEvento = picked;
+      _fechaEventoCtrl.text = DateFormat('dd/MM/yyyy').format(picked);
+    });
+    await ref.read(reservasProvider.notifier).loadMes(picked);
+  }
+
+  String _formatDate(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
+
+  Widget _buildDisponibilidad({
+    required bool isLoading,
+    required bool ocupada,
+    required int total,
+  }) {
+    if (isLoading) {
+      return const Text('Verificando disponibilidad...');
+    }
+    if (ocupada) {
+      return Text(
+        'Hay $total reserva(s) en esa fecha',
+        style: const TextStyle(color: AppColors.error),
+      );
+    }
+    return const Text(
+      'Fecha disponible para reservar',
+      style: TextStyle(color: Colors.green),
+    );
+  }
+
+  Widget _buildContactCard(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F6F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E1D8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Consultas y ajustes',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Text('Telefono: ${AppConstants.contactPhone}'),
+          Text('WhatsApp: ${AppConstants.contactWhatsapp}'),
+          Text('Correo: ${AppConstants.contactEmail}'),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _crearCotizacion() async {
+    if (_formKey.currentState?.validate() != true) return;
+
+    final cart = ref.read(cotizacionCartProvider);
+    if (cart.items.isEmpty) return;
+
+    final id = await ref
+        .read(cotizacionProvider.notifier)
+        .crearCotizacion(
+          restaurantId: AppConstants.defaultRestaurantId,
+          mesaId: widget.mesaId,
+          clienteNombre: _nombreCtrl.text.trim(),
+          clienteTelefono: _telefonoCtrl.text.trim(),
+          clienteEmail: _emailCtrl.text.trim(),
+          reservaLocal: _reservaLocal,
+          fechaEvento: _fechaEvento == null ? null : _formatDate(_fechaEvento!),
+          personas: int.tryParse(_personasCtrl.text.trim()),
+          comidaPreferida: _comidaCtrl.text.trim().isEmpty
+              ? null
+              : _comidaCtrl.text.trim(),
+          notas: _notasCtrl.text.trim().isEmpty ? null : _notasCtrl.text.trim(),
+          items: cart.items,
+        );
+
+    if (!mounted) return;
+    if (id != null) {
+      ref.read(cotizacionCartProvider.notifier).clear();
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cotizacion creada: ${id.substring(0, 8)}')),
+      );
+    }
+  }
+}
