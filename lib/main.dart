@@ -33,9 +33,6 @@ Future<void> main() async {
   await initializePlatformSpecific();
 
   // 🗄️ INICIALIZAR BASE DE DATOS DE FORMA SEGURA
-  await initDatabaseSafely();
-
-  // Inicializar dependencias y base de datos
   await initDependencies();
 
   // Cargar activación local (demo/licencia) antes de restaurar la sesión.
