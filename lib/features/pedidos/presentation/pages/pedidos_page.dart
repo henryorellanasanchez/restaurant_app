@@ -41,15 +41,20 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
       appBar: AppBar(
         title: const Text('Gestión de Pedidos'),
         actions: [
-          _buildFilterChip(null, 'Todos', state.totalPedidos),
-          _buildFilterChip(EstadoPedido.creado, 'Nuevos', state.totalCreados),
-          _buildFilterChip(
-            EstadoPedido.enPreparacion,
-            'En prep.',
-            state.totalEnPreparacion,
+          IconButton(
+            tooltip: 'Actualizar',
+            onPressed: () {
+              ref.read(pedidosProvider.notifier).loadPedidosActivos();
+              ref.read(mesasProvider.notifier).loadMesas();
+            },
+            icon: const Icon(Icons.refresh_rounded),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 8),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: _buildTopBarContent(state),
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
@@ -79,6 +84,27 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
         selectedColor: estado != null
             ? _getColorByEstado(estado).withValues(alpha: 0.2)
             : AppColors.primary.withValues(alpha: 0.2),
+      ),
+    );
+  }
+
+  Widget _buildTopBarContent(PedidosState state) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: Row(
+          children: [
+            _buildFilterChip(null, 'Todos', state.totalPedidos),
+            _buildFilterChip(EstadoPedido.creado, 'Nuevos', state.totalCreados),
+            _buildFilterChip(
+              EstadoPedido.enPreparacion,
+              'En prep.',
+              state.totalEnPreparacion,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -322,22 +348,19 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
         .read(pedidosProvider.notifier)
         .cambiarEstado(pedido.id, nuevoEstado, pedido.restaurantId);
 
-    if (success && mounted) {
-      // Si se entrega, liberar la mesa
-      if (nuevoEstado == EstadoPedido.entregado && pedido.mesaId != null) {
-        await ref
-            .read(mesasProvider.notifier)
-            .cambiarEstado(
-              pedido.mesaId!,
-              EstadoMesa.libre,
-              pedido.restaurantId,
-            );
-      }
+    if (!success) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pedido actualizado a ${nuevoEstado.label}')),
-      );
+    // Si se entrega, liberar la mesa
+    if (nuevoEstado == EstadoPedido.entregado && pedido.mesaId != null) {
+      await ref
+          .read(mesasProvider.notifier)
+          .cambiarEstado(pedido.mesaId!, EstadoMesa.libre, pedido.restaurantId);
     }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Pedido actualizado a ${nuevoEstado.label}')),
+    );
   }
 
   Future<void> _confirmDelete(BuildContext context, Pedido pedido) async {
@@ -367,21 +390,23 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
           .read(pedidosProvider.notifier)
           .eliminarPedido(pedido.id, pedido.restaurantId);
 
-      if (success && mounted) {
-        // Liberar mesa
-        if (pedido.mesaId != null) {
-          await ref
-              .read(mesasProvider.notifier)
-              .cambiarEstado(
-                pedido.mesaId!,
-                EstadoMesa.libre,
-                pedido.restaurantId,
-              );
-        }
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Pedido eliminado')));
+      if (!success) return;
+
+      // Liberar mesa
+      if (pedido.mesaId != null) {
+        await ref
+            .read(mesasProvider.notifier)
+            .cambiarEstado(
+              pedido.mesaId!,
+              EstadoMesa.libre,
+              pedido.restaurantId,
+            );
       }
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pedido eliminado')));
     }
   }
 

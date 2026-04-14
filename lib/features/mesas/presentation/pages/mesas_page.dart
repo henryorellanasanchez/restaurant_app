@@ -44,27 +44,20 @@ class _MesasPageState extends ConsumerState<MesasPage> {
       appBar: AppBar(
         title: const Text('Gestión de Mesas'),
         actions: [
-          _buildLlamadosBadge(),
-          // ── Reservar local completo ──────────────────────────
-          TextButton.icon(
-            onPressed: () => _showReservarLocalDialog(context),
-            icon: const Icon(
-              Icons.event_available_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
-            label: const Text(
-              'Reservar Local',
-              style: TextStyle(color: Colors.white),
-            ),
+          IconButton(
+            tooltip: 'Actualizar',
+            onPressed: () {
+              ref.read(mesasProvider.notifier).loadMesas();
+              ref.read(llamadosProvider.notifier).loadPendientes();
+            },
+            icon: const Icon(Icons.refresh_rounded),
           ),
           const SizedBox(width: 8),
-          // ── Filtro por estado ────────────────────────────────
-          _buildFilterChip(null, 'Todas', state.totalMesas),
-          _buildFilterChip(EstadoMesa.libre, 'Libres', state.totalLibres),
-          _buildFilterChip(EstadoMesa.ocupada, 'Ocupadas', state.totalOcupadas),
-          const SizedBox(width: 16),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(124),
+          child: _buildTopBarContent(context, state),
+        ),
       ),
       // ── FAB: Crear mesa ─────────────────────────────────────
       floatingActionButton: FloatingActionButton.extended(
@@ -78,17 +71,123 @@ class _MesasPageState extends ConsumerState<MesasPage> {
 
   Widget _buildFilterChip(EstadoMesa? estado, String label, int count) {
     final isSelected = _filtroEstado == estado;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: FilterChip(
-        selected: isSelected,
-        label: Text('$label ($count)'),
-        onSelected: (_) {
-          setState(() => _filtroEstado = estado);
-        },
-        selectedColor: estado != null
-            ? _getColorByEstado(estado).withValues(alpha: 0.2)
-            : AppColors.primary.withValues(alpha: 0.2),
+    final stateColor = estado != null
+        ? _getColorByEstado(estado)
+        : Colors.white;
+
+    final bgColor = isSelected
+        ? (estado != null ? stateColor : Colors.white)
+        : Colors.white.withValues(alpha: 0.12);
+
+    final textColor = isSelected
+        ? (estado != null ? Colors.white : AppColors.primary)
+        : Colors.white;
+
+    final borderColor = isSelected
+        ? (estado != null ? stateColor : Colors.white)
+        : Colors.white.withValues(alpha: 0.45);
+
+    return GestureDetector(
+      onTap: () => setState(() => _filtroEstado = estado),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: borderColor, width: 1.5),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: stateColor.withValues(alpha: 0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSelected) ...[
+              Icon(Icons.check_rounded, size: 14, color: textColor),
+              const SizedBox(width: 4),
+            ] else if (estado != null) ...[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: stateColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              '$label ($count)',
+              style: TextStyle(
+                color: textColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBarContent(BuildContext context, MesasState state) {
+    final actionStyle = OutlinedButton.styleFrom(
+      foregroundColor: Colors.white,
+      backgroundColor: Colors.white.withValues(alpha: 0.12),
+      side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Fila de acciones
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _buildLlamadosBadge(actionStyle),
+              OutlinedButton.icon(
+                style: actionStyle,
+                onPressed: () => _showReservarLocalDialog(context),
+                icon: const Icon(Icons.event_available_rounded, size: 16),
+                label: const Text('Reservar local'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Fila de filtros
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFilterChip(null, 'Todas', state.totalMesas),
+                const SizedBox(width: 8),
+                _buildFilterChip(EstadoMesa.libre, 'Libres', state.totalLibres),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  EstadoMesa.ocupada,
+                  'Ocupadas',
+                  state.totalOcupadas,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -155,28 +254,39 @@ class _MesasPageState extends ConsumerState<MesasPage> {
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final maxExtent = width < 480
-              ? 160.0
+              ? 170.0
               : width < 800
               ? 190.0
               : 220.0;
-          final aspect = width < 480 ? 0.95 : 0.85;
+          final aspect = width < 480
+              ? 0.72
+              : width < 800
+              ? 0.8
+              : 0.92;
 
-          return GridView.builder(
-            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: maxExtent,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: aspect,
-            ),
-            itemCount: mesasFiltradas.length,
-            itemBuilder: (context, index) {
-              final mesa = mesasFiltradas[index];
-              return MesaCard(
-                mesa: mesa,
-                onTap: () => _showMesaOptions(context, mesa),
-                onLongPress: () => _showEditDialog(context, mesa),
-              );
+          return RefreshIndicator(
+            onRefresh: () async {
+              await ref.read(mesasProvider.notifier).loadMesas();
+              await ref.read(llamadosProvider.notifier).loadPendientes();
             },
+            child: GridView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: maxExtent,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: aspect,
+              ),
+              itemCount: mesasFiltradas.length,
+              itemBuilder: (context, index) {
+                final mesa = mesasFiltradas[index];
+                return MesaCard(
+                  mesa: mesa,
+                  onTap: () => _showMesaOptions(context, mesa),
+                  onLongPress: () => _showEditDialog(context, mesa),
+                );
+              },
+            ),
           );
         },
       ),
@@ -188,7 +298,7 @@ class _MesasPageState extends ConsumerState<MesasPage> {
   Future<void> _showCreateDialog(BuildContext context) async {
     final nextNum = await ref.read(mesasProvider.notifier).nextNumero();
 
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     final result = await showDialog<Mesa>(
       context: context,
@@ -201,11 +311,10 @@ class _MesasPageState extends ConsumerState<MesasPage> {
     if (result != null) {
       final mesa = result.copyWith(id: _uuid.v4());
       await ref.read(mesasProvider.notifier).crearMesa(mesa);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Mesa ${mesa.numero} creada')));
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Mesa ${mesa.numero} creada')));
     }
   }
 
@@ -221,11 +330,10 @@ class _MesasPageState extends ConsumerState<MesasPage> {
 
     if (result != null) {
       await ref.read(mesasProvider.notifier).actualizarMesa(result);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Mesa ${result.numero} actualizada')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Mesa ${result.numero} actualizada')),
+      );
     }
   }
 
@@ -386,19 +494,23 @@ class _MesasPageState extends ConsumerState<MesasPage> {
     });
   }
 
-  Widget _buildLlamadosBadge() {
+  Widget _buildLlamadosBadge(ButtonStyle style) {
     final llamados = ref.watch(llamadosProvider);
     final count = llamados.totalPendientes;
 
-    return IconButton(
-      tooltip: 'Llamados a mesero',
-      onPressed: () => _showLlamadosSheet(context),
-      icon: count > 0
-          ? Badge(
-              label: Text('$count'),
-              child: const Icon(Icons.campaign_rounded),
-            )
-          : const Icon(Icons.campaign_outlined),
+    return Tooltip(
+      message: 'Llamados a mesero',
+      child: OutlinedButton.icon(
+        style: style,
+        onPressed: () => _showLlamadosSheet(context),
+        icon: count > 0
+            ? Badge(
+                label: Text('$count'),
+                child: const Icon(Icons.campaign_rounded, size: 18),
+              )
+            : const Icon(Icons.campaign_outlined, size: 18),
+        label: Text(count > 0 ? 'Llamados' : 'Avisos'),
+      ),
     );
   }
 
@@ -482,11 +594,10 @@ class _MesasPageState extends ConsumerState<MesasPage> {
       await ref
           .read(mesasProvider.notifier)
           .eliminarMesa(mesa.id, mesa.restaurantId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${mesa.displayName} eliminada')),
-        );
-      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${mesa.displayName} eliminada')));
     }
   }
 

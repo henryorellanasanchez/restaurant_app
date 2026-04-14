@@ -25,6 +25,16 @@ class ReservaRepositoryImpl implements ReservaRepository {
   }
 
   @override
+  ResultFuture<void> updateReserva(Reserva reserva) async {
+    try {
+      await _dataSource.updateReserva(ReservaModel.fromEntity(reserva));
+      return const Right(null);
+    } on DatabaseException catch (e) {
+      return Left(DatabaseFailure(message: e.message));
+    }
+  }
+
+  @override
   ResultFuture<List<Reserva>> getReservasByMonth(
     String restaurantId,
     String startDate,

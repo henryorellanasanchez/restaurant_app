@@ -46,7 +46,10 @@ class VentaCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           venta.metodoPago.label,
@@ -54,7 +57,16 @@ class VentaCard extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        Chip(
+                          label: Text(
+                            venta.tipoComprobante.label,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
                         Chip(
                           label: Text(
                             '${venta.cantidadItems} items',
@@ -65,6 +77,17 @@ class VentaCard extends StatelessWidget {
                           materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                         ),
+                        if (venta.tipoComprobante == TipoComprobante.factura)
+                          Chip(
+                            label: Text(
+                              venta.estadoSri.label,
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 2),
@@ -87,6 +110,17 @@ class VentaCard extends StatelessWidget {
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: cs.onSurfaceVariant,
                         ),
+                      ),
+                    if (venta.sriMensaje != null &&
+                        venta.sriMensaje!.isNotEmpty &&
+                        venta.tipoComprobante == TipoComprobante.factura)
+                      Text(
+                        venta.sriMensaje!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),

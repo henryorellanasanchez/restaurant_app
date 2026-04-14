@@ -6,6 +6,7 @@ import 'package:restaurant_app/features/caja/domain/entities/venta.dart';
 import 'package:restaurant_app/features/caja/domain/entities/venta_detalle.dart';
 import 'package:restaurant_app/features/caja/domain/usecases/caja_usecases.dart';
 import 'package:restaurant_app/features/pedidos/domain/entities/pedido.dart';
+import 'package:restaurant_app/services/facturacion/sri_service.dart';
 import 'package:uuid/uuid.dart';
 
 /// Estado del módulo de Caja.
@@ -58,6 +59,17 @@ class CajaState {
 
   int get cantidadVentasHoy => ventasHoy.length;
 
+  double get ticketPromedioHoy =>
+      cantidadVentasHoy == 0 ? 0.0 : totalVentasHoy / cantidadVentasHoy;
+
+  double get totalPendientePorCobrar =>
+      pedidosParaCobrar.fold(0.0, (sum, pedido) {
+        final totalPedido = pedido.totalCalculado > 0
+            ? pedido.totalCalculado
+            : pedido.total;
+        return sum + totalPedido;
+      });
+
   Map<MetodoPago, double> get ventasPorMetodo {
     final map = <MetodoPago, double>{};
     for (final v in ventasHoy) {
@@ -73,16 +85,19 @@ class CajaNotifier extends StateNotifier<CajaState> {
   final RegistrarVenta _registrarVenta;
   final GetVentas _getVentas;
   final GetVentasByFecha _getVentasByFecha;
+  final SriService _sriService;
 
   CajaNotifier({
     required GetPedidosParaCobrar getPedidosParaCobrar,
     required RegistrarVenta registrarVenta,
     required GetVentas getVentas,
     required GetVentasByFecha getVentasByFecha,
+    required SriService sriService,
   }) : _getPedidosParaCobrar = getPedidosParaCobrar,
        _registrarVenta = registrarVenta,
        _getVentas = getVentas,
        _getVentasByFecha = getVentasByFecha,
+       _sriService = sriService,
        super(const CajaState());
 
   // ── Carga ──────────────────────────────────────────────────────
@@ -129,10 +144,12 @@ class CajaNotifier extends StateNotifier<CajaState> {
   Future<Venta?> cobrarPedido({
     required Pedido pedido,
     required MetodoPago metodoPago,
+    TipoComprobante tipoComprobante = TipoComprobante.ticket,
     double descuento = 0,
     String? descripcion,
     String? clienteNombre,
     String? clienteEmail,
+    String? clienteIdentificacion,
     String? cajeroId,
   }) async {
     state = state.copyWith(isProcessing: true, clearError: true);
@@ -157,20 +174,38 @@ class CajaNotifier extends StateNotifier<CajaState> {
     final totalConDescuento = (subtotal - descuento).clamp(0.0, subtotal);
     const double impuestos = 0; // configurable en fases posteriores
 
-    final venta = Venta(
+    final ventaBase = Venta(
       id: ventaId,
       restaurantId: pedido.restaurantId,
       pedidoId: pedido.id,
       cajeroId: cajeroId,
       clienteNombre: clienteNombre,
       clienteEmail: clienteEmail,
+      clienteIdentificacion: clienteIdentificacion,
       metodoPago: metodoPago,
+      tipoComprobante: tipoComprobante,
       subtotal: subtotal,
       impuestos: impuestos,
       total: totalConDescuento + impuestos,
       descripcionPago: descripcion,
       createdAt: DateTime.now(),
       detalles: detalles,
+    );
+
+    final sriDraft = tipoComprobante == TipoComprobante.factura
+        ? await _sriService.buildInvoiceDraft(ventaBase)
+        : null;
+
+    final venta = ventaBase.copyWith(
+      estadoSri: tipoComprobante == TipoComprobante.factura
+          ? ((sriDraft?.status.canPrepareInvoice ?? false)
+                ? EstadoComprobanteSri.preparado
+                : EstadoComprobanteSri.noConfigurado)
+          : EstadoComprobanteSri.noAplica,
+      sriClaveAcceso: sriDraft?.accessKey,
+      sriMensaje: tipoComprobante == TipoComprobante.factura
+          ? '${sriDraft?.status.message ?? 'Factura preparada localmente.'} La transmisión real queda comentada.'
+          : 'Comprobante interno generado sin envío fiscal.',
     );
 
     final result = await _registrarVenta(venta, mesaId: pedido.mesaId);
@@ -201,5 +236,6 @@ final cajaProvider = StateNotifierProvider<CajaNotifier, CajaState>((ref) {
     registrarVenta: sl(),
     getVentas: sl(),
     getVentasByFecha: sl(),
+    sriService: sl(),
   );
 });

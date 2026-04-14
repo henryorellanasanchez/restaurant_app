@@ -35,6 +35,8 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
   bool _showPin = false;
 
   bool get _isEditing => widget.usuario != null;
+  bool get _pinEsObligatorio =>
+      !_isEditing || (widget.usuario?.pin?.trim().isEmpty ?? true);
 
   @override
   void initState() {
@@ -85,119 +87,165 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
     final isProcessing = ref.watch(
       usuarioProvider.select((s) => s.isProcessing),
     );
+    final usuarios = ref.watch(usuarioProvider.select((s) => s.usuarios));
     final colors = Theme.of(context).colorScheme;
+    final yaExisteOtroAdministrador = usuarios.any(
+      (u) =>
+          u.activo &&
+          u.rol == RolUsuario.administrador &&
+          u.id != widget.usuario?.id,
+    );
+    final adminBloqueado =
+        yaExisteOtroAdministrador &&
+        widget.usuario?.rol != RolUsuario.administrador;
+    final rolesDisponibles = RolUsuario.values.where((rol) {
+      if (rol != RolUsuario.administrador) return true;
+      return !adminBloqueado;
+    }).toList();
 
     return AlertDialog(
       title: Text(_isEditing ? 'Editar usuario' : 'Nuevo usuario'),
-      content: SizedBox(
-        width: 420,
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Nombre
-              TextFormField(
-                controller: _nombreCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre completo *',
-                  prefixIcon: Icon(Icons.person_rounded),
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.words,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'El nombre es requerido';
-                  }
-                  if (v.trim().length < 2) {
-                    return 'Mínimo 2 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 14),
-              // Email (opcional)
-              TextFormField(
-                controller: _emailCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Email (opcional)',
-                  prefixIcon: Icon(Icons.email_rounded),
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  final emailRegex = RegExp(r'^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}$');
-                  if (!emailRegex.hasMatch(v.trim())) {
-                    return 'Formato de email inválido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 14),
-              // PIN
-              TextFormField(
-                controller: _pinCtrl,
-                decoration: InputDecoration(
-                  labelText: _isEditing
-                      ? 'Nuevo PIN (dejar vacío para no cambiar)'
-                      : 'PIN de acceso (4 dígitos)',
-                  prefixIcon: const Icon(Icons.lock_rounded),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _showPin
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
-                    ),
-                    onPressed: () => setState(() => _showPin = !_showPin),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        ),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Nombre
+                TextFormField(
+                  controller: _nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre completo *',
+                    prefixIcon: Icon(Icons.person_rounded),
+                    border: OutlineInputBorder(),
                   ),
+                  textCapitalization: TextCapitalization.words,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'El nombre es requerido';
+                    }
+                    if (v.trim().length < 2) {
+                      return 'Mínimo 2 caracteres';
+                    }
+                    return null;
+                  },
                 ),
-                obscureText: !_showPin,
-                keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(4),
-                ],
-                validator: (v) {
-                  if (_isEditing && (v == null || v.isEmpty)) return null;
-                  if (v == null || v.isEmpty) return null; // PIN opcional
-                  if (v.length != 4) return 'El PIN debe tener 4 dígitos';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 14),
-              // Rol
-              DropdownButtonFormField<RolUsuario>(
-                value: _rol,
-                decoration: const InputDecoration(
-                  labelText: 'Rol *',
-                  prefixIcon: Icon(Icons.badge_rounded),
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 14),
+                // Email (opcional)
+                TextFormField(
+                  controller: _emailCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (opcional)',
+                    prefixIcon: Icon(Icons.email_rounded),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return null;
+                    final emailRegex = RegExp(
+                      r'^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}$',
+                    );
+                    if (!emailRegex.hasMatch(v.trim())) {
+                      return 'Formato de email inválido';
+                    }
+                    return null;
+                  },
                 ),
-                items: RolUsuario.values
-                    .map(
-                      (r) => DropdownMenuItem(
-                        value: r,
-                        child: Row(
-                          children: [
-                            Icon(
-                              _iconRol(r),
-                              size: 18,
-                              color: _colorRol(r, colors),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(r.label),
-                          ],
-                        ),
+                const SizedBox(height: 14),
+                // PIN
+                TextFormField(
+                  controller: _pinCtrl,
+                  decoration: InputDecoration(
+                    labelText: _pinEsObligatorio
+                        ? 'PIN de acceso * (4 dígitos)'
+                        : 'Nuevo PIN (opcional, 4 dígitos)',
+                    helperText: _pinEsObligatorio
+                        ? 'Obligatorio para ingresar al sistema.'
+                        : 'Déjalo vacío solo si deseas conservar el PIN actual.',
+                    helperMaxLines: 2,
+                    prefixIcon: const Icon(Icons.lock_rounded),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showPin
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _rol = v);
-                },
-              ),
-            ],
+                      onPressed: () => setState(() => _showPin = !_showPin),
+                    ),
+                  ),
+                  obscureText: !_showPin,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(4),
+                  ],
+                  validator: (v) {
+                    final value = v?.trim() ?? '';
+                    if (value.isEmpty) {
+                      if (_pinEsObligatorio) {
+                        return 'El PIN es obligatorio';
+                      }
+                      return null;
+                    }
+                    if (value.length != 4) return 'El PIN debe tener 4 dígitos';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 14),
+                // Rol
+                DropdownButtonFormField<RolUsuario>(
+                  value: _rol,
+                  decoration: const InputDecoration(
+                    labelText: 'Rol *',
+                    prefixIcon: Icon(Icons.badge_rounded),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: rolesDisponibles
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r,
+                          child: Row(
+                            children: [
+                              Icon(
+                                _iconRol(r),
+                                size: 18,
+                                color: _colorRol(r, colors),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(r.label),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _rol = v);
+                  },
+                ),
+                if (adminBloqueado) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Ya existe un administrador activo. No se puede crear otro.',
+                      style: TextStyle(
+                        color: colors.error,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       ),

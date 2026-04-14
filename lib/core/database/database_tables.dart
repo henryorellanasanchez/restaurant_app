@@ -27,6 +27,7 @@ class DatabaseTables {
     _createIngredientesTable,
     _createProductoIngredientesTable,
     _createSyncLogTable,
+    _createSriSecuencialesTable,
   ];
 
   // ── Restaurantes ───────────────────────────────────────────────────
@@ -174,11 +175,16 @@ class DatabaseTables {
       cajero_id TEXT,
       cliente_nombre TEXT,
       cliente_email TEXT,
+      cliente_identificacion TEXT,
       metodo_pago TEXT NOT NULL,
+      tipo_comprobante TEXT NOT NULL DEFAULT 'ticket',
+      sri_estado TEXT NOT NULL DEFAULT 'no_aplica',
       subtotal REAL NOT NULL,
       impuestos REAL NOT NULL DEFAULT 0,
       total REAL NOT NULL,
       descripcion_pago TEXT,
+      sri_clave_acceso TEXT,
+      sri_mensaje TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (restaurant_id) REFERENCES restaurantes(id),
       FOREIGN KEY (pedido_id) REFERENCES pedidos(id),
@@ -260,10 +266,16 @@ class DatabaseTables {
       tipo TEXT NOT NULL,
       mesa_id TEXT,
       fecha TEXT NOT NULL,
+      hora_inicio TEXT NOT NULL DEFAULT '19:00',
+      hora_fin TEXT NOT NULL DEFAULT '20:30',
+      numero_personas INTEGER NOT NULL DEFAULT 2,
+      estado TEXT NOT NULL DEFAULT 'pendiente',
+      tipo_evento TEXT,
       cliente_nombre TEXT NOT NULL,
       cliente_telefono TEXT NOT NULL,
       cliente_email TEXT NOT NULL,
       notas TEXT,
+      requerimientos TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (restaurant_id) REFERENCES restaurantes(id),
       FOREIGN KEY (mesa_id) REFERENCES mesas(id)
@@ -296,6 +308,16 @@ class DatabaseTables {
       cantidad_requerida REAL NOT NULL,
       FOREIGN KEY (producto_id) REFERENCES productos(id),
       FOREIGN KEY (ingrediente_id) REFERENCES ingredientes(id)
+    )
+  ''';
+
+  // ── Secuenciales SRI ──────────────────────────────────────────────
+  static const String _createSriSecuencialesTable = '''
+    CREATE TABLE IF NOT EXISTS sri_secuenciales (
+      id TEXT NOT NULL,
+      restaurant_id TEXT NOT NULL,
+      ultimo_secuencial INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (id, restaurant_id)
     )
   ''';
 

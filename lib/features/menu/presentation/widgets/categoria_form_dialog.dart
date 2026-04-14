@@ -10,8 +10,7 @@ class CategoriaFormDialog extends StatefulWidget {
   const CategoriaFormDialog({super.key, this.categoria});
 
   /// Abre el diálogo y retorna la categoría creada/editada, o null si se cancela.
-  static Future<Categoria?> show(BuildContext context,
-      {Categoria? categoria}) {
+  static Future<Categoria?> show(BuildContext context, {Categoria? categoria}) {
     return showDialog<Categoria>(
       context: context,
       barrierDismissible: false,
@@ -37,10 +36,8 @@ class _CategoriaFormDialogState extends State<CategoriaFormDialog> {
     super.initState();
     final cat = widget.categoria;
     _nombreCtrl = TextEditingController(text: cat?.nombre ?? '');
-    _descripcionCtrl =
-        TextEditingController(text: cat?.descripcion ?? '');
-    _ordenCtrl =
-        TextEditingController(text: (cat?.orden ?? 0).toString());
+    _descripcionCtrl = TextEditingController(text: cat?.descripcion ?? '');
+    _ordenCtrl = TextEditingController(text: (cat?.orden ?? 0).toString());
     _activo = cat?.activo ?? true;
   }
 
@@ -58,8 +55,8 @@ class _CategoriaFormDialogState extends State<CategoriaFormDialog> {
     final now = DateTime.now();
     final categoria = Categoria(
       id: widget.categoria?.id ?? const Uuid().v4(),
-      restaurantId: widget.categoria?.restaurantId ??
-          AppConstants.defaultRestaurantId,
+      restaurantId:
+          widget.categoria?.restaurantId ?? AppConstants.defaultRestaurantId,
       nombre: _nombreCtrl.text.trim(),
       descripcion: _descripcionCtrl.text.trim().isEmpty
           ? null
@@ -79,81 +76,83 @@ class _CategoriaFormDialogState extends State<CategoriaFormDialog> {
 
     return AlertDialog(
       title: Text(_isEditing ? 'Editar Categoría' : 'Nueva Categoría'),
-      content: SizedBox(
-        width: 420,
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        ),
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Nombre
-              TextFormField(
-                controller: _nombreCtrl,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre *',
-                  hintText: 'Ej: Platos Fuertes',
-                  prefixIcon: Icon(Icons.label_outline),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Nombre
+                TextFormField(
+                  controller: _nombreCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre *',
+                    hintText: 'Ej: Platos Fuertes',
+                    prefixIcon: Icon(Icons.label_outline),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'El nombre es obligatorio';
+                    }
+                    if (v.trim().length < 2) {
+                      return 'Mínimo 2 caracteres';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'El nombre es obligatorio';
-                  }
-                  if (v.trim().length < 2) {
-                    return 'Mínimo 2 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              // Descripción
-              TextFormField(
-                controller: _descripcionCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Descripción',
-                  hintText: 'Opcional',
-                  prefixIcon: Icon(Icons.notes_outlined),
-                  alignLabelWithHint: true,
+                // Descripción
+                TextFormField(
+                  controller: _descripcionCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción',
+                    hintText: 'Opcional',
+                    prefixIcon: Icon(Icons.notes_outlined),
+                    alignLabelWithHint: true,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              // Orden
-              TextFormField(
-                controller: _ordenCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Orden de visualización',
-                  hintText: '0',
-                  prefixIcon: Icon(Icons.sort),
+                // Orden
+                TextFormField(
+                  controller: _ordenCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Orden de visualización',
+                    hintText: '0',
+                    prefixIcon: Icon(Icons.sort),
+                  ),
+                  validator: (v) {
+                    if (v != null && v.isNotEmpty && int.tryParse(v) == null) {
+                      return 'Ingresa un número entero';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (v) {
-                  if (v != null &&
-                      v.isNotEmpty &&
-                      int.tryParse(v) == null) {
-                    return 'Ingresa un número entero';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              // Activo
-              SwitchListTile.adaptive(
-                title: const Text('Categoría activa'),
-                subtitle: Text(
-                  _activo
-                      ? 'Visible en el menú'
-                      : 'Oculta del menú',
-                  style: theme.textTheme.bodySmall,
+                // Activo
+                SwitchListTile.adaptive(
+                  title: const Text('Categoría activa'),
+                  subtitle: Text(
+                    _activo ? 'Visible en el menú' : 'Oculta del menú',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  value: _activo,
+                  onChanged: (v) => setState(() => _activo = v),
+                  contentPadding: EdgeInsets.zero,
                 ),
-                value: _activo,
-                onChanged: (v) => setState(() => _activo = v),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

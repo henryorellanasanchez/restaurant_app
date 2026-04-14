@@ -75,7 +75,13 @@ class CajaLocalDataSourceImpl implements CajaLocalDataSource {
         ''',
         [restaurantId],
       );
-      return results.map((row) => VentaModel.fromMap(row)).toList();
+
+      final ventas = <VentaModel>[];
+      for (final row in results) {
+        final detalles = await _getDetallesByVenta(row['id'] as String);
+        ventas.add(VentaModel.fromMap(row, detalles: detalles));
+      }
+      return ventas;
     } catch (e) {
       throw DatabaseException(message: 'Error al obtener ventas: $e');
     }
@@ -99,7 +105,13 @@ class CajaLocalDataSourceImpl implements CajaLocalDataSource {
         ''',
         [restaurantId, fechaStr],
       );
-      return results.map((row) => VentaModel.fromMap(row)).toList();
+
+      final ventas = <VentaModel>[];
+      for (final row in results) {
+        final detalles = await _getDetallesByVenta(row['id'] as String);
+        ventas.add(VentaModel.fromMap(row, detalles: detalles));
+      }
+      return ventas;
     } catch (e) {
       throw DatabaseException(message: 'Error al obtener ventas por fecha: $e');
     }

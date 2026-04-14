@@ -22,12 +22,15 @@ class CocinaPage extends ConsumerStatefulWidget {
   ConsumerState<CocinaPage> createState() => _CocinaPageState();
 }
 
-class _CocinaPageState extends ConsumerState<CocinaPage> {
+class _CocinaPageState extends ConsumerState<CocinaPage>
+    with SingleTickerProviderStateMixin {
   late CocinaNotifier _notifier;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _notifier = ref.read(cocinaProvider.notifier);
       _notifier.start();
@@ -36,6 +39,7 @@ class _CocinaPageState extends ConsumerState<CocinaPage> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _notifier.stop();
     super.dispose();
   }
@@ -54,22 +58,30 @@ class _CocinaPageState extends ConsumerState<CocinaPage> {
     return AppBar(
       elevation: 0,
       title: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.soup_kitchen_rounded, color: cs.onPrimary, size: 24),
           const SizedBox(width: 10),
-          const Text(
-            'PANTALLA DE COCINA',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-              fontSize: 18,
+          const Flexible(
+            child: Text(
+              'PANTALLA DE COCINA',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+                fontSize: 18,
+              ),
             ),
           ),
-          const Spacer(),
-          // Contador total
-          if (!state.isLoading)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        ],
+      ),
+      actions: [
+        // Contador total
+        if (!state.isLoading)
+          Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: cs.onPrimary.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
@@ -83,9 +95,7 @@ class _CocinaPageState extends ConsumerState<CocinaPage> {
                 ),
               ),
             ),
-        ],
-      ),
-      actions: [
+          ),
         // Última actualización
         if (state.lastRefresh != null)
           Padding(
@@ -136,45 +146,117 @@ class _CocinaPageState extends ConsumerState<CocinaPage> {
       return _buildEmpty();
     }
 
-    // ── Layout 3 columnas ────────────────────────────────────────
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final isWide = MediaQuery.sizeOf(context).width >= 600;
+
+    if (isWide) {
+      // ── 3 columnas en tablet / desktop ──────────────────────
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _buildColumna(
+              titulo: 'POR HACER',
+              icono: Icons.playlist_add_check_circle_rounded,
+              color: AppColors.pedidoCreado,
+              pedidos: state.nuevos,
+              emptyMsg: 'No hay pedidos en espera',
+            ),
+          ),
+          _buildDivider(),
+          Expanded(
+            child: _buildColumna(
+              titulo: 'EN COCINA',
+              icono: Icons.restaurant_rounded,
+              color: AppColors.pedidoEnPreparacion,
+              pedidos: state.preparando,
+              emptyMsg: 'No hay pedidos cocinándose',
+            ),
+          ),
+          _buildDivider(),
+          Expanded(
+            child: _buildColumna(
+              titulo: 'LISTOS',
+              icono: Icons.done_all_rounded,
+              color: AppColors.pedidoFinalizado,
+              pedidos: state.listos,
+              emptyMsg: 'No hay pedidos listos',
+            ),
+          ),
+        ],
+      );
+    }
+
+    // ── TabBar en móvil ─────────────────────────────────────────
+    return Column(
       children: [
-        // Columna 1: Nuevos
-        Expanded(
-          child: _buildColumna(
-            titulo: 'NUEVOS',
-            icono: Icons.fiber_new_rounded,
-            color: AppColors.pedidoCreado,
-            pedidos: state.nuevos,
-            emptyMsg: 'No hay pedidos nuevos',
-          ),
+        TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(
+              child: _TabLabel(
+                'POR HACER',
+                state.nuevos.length,
+                AppColors.pedidoCreado,
+              ),
+            ),
+            Tab(
+              child: _TabLabel(
+                'EN COCINA',
+                state.preparando.length,
+                AppColors.pedidoEnPreparacion,
+              ),
+            ),
+            Tab(
+              child: _TabLabel(
+                'LISTOS',
+                state.listos.length,
+                AppColors.pedidoFinalizado,
+              ),
+            ),
+          ],
         ),
-        _buildDivider(),
-
-        // Columna 2: Preparando
         Expanded(
-          child: _buildColumna(
-            titulo: 'PREPARANDO',
-            icono: Icons.restaurant_rounded,
-            color: AppColors.pedidoEnPreparacion,
-            pedidos: state.preparando,
-            emptyMsg: 'No hay pedidos en preparación',
-          ),
-        ),
-        _buildDivider(),
-
-        // Columna 3: Listos
-        Expanded(
-          child: _buildColumna(
-            titulo: 'LISTOS',
-            icono: Icons.done_all_rounded,
-            color: AppColors.pedidoFinalizado,
-            pedidos: state.listos,
-            emptyMsg: 'No hay pedidos listos',
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildListaMovil(state.nuevos, 'No hay pedidos en espera'),
+              _buildListaMovil(state.preparando, 'No hay pedidos cocinándose'),
+              _buildListaMovil(state.listos, 'No hay pedidos listos'),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildListaMovil(List<Pedido> pedidos, String emptyMsg) {
+    if (pedidos.isEmpty) {
+      return Center(
+        child: Text(
+          emptyMsg,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: pedidos.length,
+      itemBuilder: (context, index) {
+        final pedido = pedidos[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: CocinaTicketCard(
+            pedido: pedido,
+            onAvanzar: () =>
+                ref.read(cocinaProvider.notifier).avanzarEstadoPedido(pedido),
+            onToggleItem: (itemId, estadoActual) => ref
+                .read(cocinaProvider.notifier)
+                .toggleEstadoItem(itemId, estadoActual, pedido.restaurantId),
+          ),
+        );
+      },
     );
   }
 
@@ -353,5 +435,47 @@ class _CocinaPageState extends ConsumerState<CocinaPage> {
     final m = dt.minute.toString().padLeft(2, '0');
     final s = dt.second.toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+}
+
+class _TabLabel extends StatelessWidget {
+  const _TabLabel(this.label, this.count, this.color);
+
+  final String label;
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ),
+        if (count > 0) ...[
+          const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }

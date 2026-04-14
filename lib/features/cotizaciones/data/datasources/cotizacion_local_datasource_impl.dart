@@ -38,7 +38,20 @@ class CotizacionLocalDataSourceImpl implements CotizacionLocalDataSource {
         whereArgs: [restaurantId],
         orderBy: 'created_at DESC',
       );
-      return rows.map((r) => CotizacionModel.fromMap(r)).toList();
+
+      final cotizaciones = <CotizacionModel>[];
+      for (final row in rows) {
+        final itemsRows = await _dbHelper.query(
+          _tableItems,
+          where: 'cotizacion_id = ?',
+          whereArgs: [row['id']],
+          orderBy: 'rowid ASC',
+        );
+        final items = itemsRows.map(CotizacionItemModel.fromMap).toList();
+        cotizaciones.add(CotizacionModel.fromMap(row, items: items));
+      }
+
+      return cotizaciones;
     } catch (e) {
       throw DatabaseException(message: 'Error al listar cotizaciones: $e');
     }

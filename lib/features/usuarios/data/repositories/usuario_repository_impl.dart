@@ -1,4 +1,6 @@
 import 'package:dartz/dartz.dart';
+import 'package:restaurant_app/core/errors/exceptions.dart'
+    show BusinessException;
 import 'package:restaurant_app/core/errors/failures.dart';
 import 'package:restaurant_app/core/utils/typedefs.dart';
 import 'package:restaurant_app/features/usuarios/data/datasources/usuario_local_datasource.dart';
@@ -39,6 +41,8 @@ class UsuarioRepositoryImpl implements UsuarioRepository {
       final model = UsuarioModel.fromEntity(usuario);
       final result = await _dataSource.createUsuario(model);
       return Right(result);
+    } on BusinessException catch (e) {
+      return Left(ValidationFailure(message: e.message));
     } on DatabaseException catch (e) {
       return Left(DatabaseFailure(message: e.toString()));
     }
@@ -50,6 +54,8 @@ class UsuarioRepositoryImpl implements UsuarioRepository {
       final model = UsuarioModel.fromEntity(usuario);
       final result = await _dataSource.updateUsuario(model);
       return Right(result);
+    } on BusinessException catch (e) {
+      return Left(ValidationFailure(message: e.message));
     } on DatabaseException catch (e) {
       return Left(DatabaseFailure(message: e.toString()));
     }
@@ -60,6 +66,8 @@ class UsuarioRepositoryImpl implements UsuarioRepository {
     try {
       await _dataSource.deleteUsuario(id);
       return const Right(null);
+    } on BusinessException catch (e) {
+      return Left(ValidationFailure(message: e.message));
     } on DatabaseException catch (e) {
       return Left(DatabaseFailure(message: e.toString()));
     }

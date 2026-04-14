@@ -12,6 +12,15 @@ import 'package:restaurant_app/features/mesas/presentation/providers/mesas_provi
 import 'package:restaurant_app/features/pedidos/presentation/providers/pedidos_provider.dart';
 import 'package:restaurant_app/features/reportes/domain/usecases/reportes_usecases.dart';
 import 'package:restaurant_app/features/cotizaciones/domain/usecases/cotizacion_usecases.dart';
+import 'package:restaurant_app/core/utils/version_check_service.dart';
+import 'package:restaurant_app/features/home/presentation/widgets/update_banner.dart';
+
+/// Provider que verifica si hay una actualización disponible (se ejecuta una vez).
+final _updateCheckProvider = FutureProvider.autoDispose<UpdateCheckResult>((
+  ref,
+) async {
+  return VersionCheckService().checkForUpdate();
+});
 
 /// Provider que obtiene el total de ventas de hoy.
 final _ventasHoyProvider = FutureProvider.autoDispose<double>((ref) async {
@@ -57,9 +66,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final mesasState = ref.watch(mesasProvider);
     final pedidosState = ref.watch(pedidosProvider);
-    final rol = sl<AuthChangeNotifier>().usuario?.rol;
-    final puedeVerFinanzas = rol != RolUsuario.mesero;
-    final puedeVerCotizaciones = rol == RolUsuario.administrador;
+    final usuario = sl<AuthChangeNotifier>().usuario;
+    final rol = usuario?.rol ?? RolUsuario.mesero;
+    final puedeVerFinanzas = rol.puedeVerResumenFinanciero;
+    final puedeVerCotizaciones = rol.puedeGestionarCotizaciones;
     final ventasHoyAsync = puedeVerFinanzas
         ? ref.watch(_ventasHoyProvider)
         : const AsyncValue<double>.data(0);
@@ -102,7 +112,16 @@ class _HomePageState extends ConsumerState<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(context),
+            // ── Banner de actualización ────────────────────────────
+            ref
+                .watch(_updateCheckProvider)
+                .maybeWhen(
+                  data: (result) => result is UpdateAvailable
+                      ? UpdateBanner(info: result.info)
+                      : const SizedBox.shrink(),
+                  orElse: () => const SizedBox.shrink(),
+                ),
+            _buildHeader(context, usuario?.nombre, rol),
             const SizedBox(height: 20),
             Text(
               'Resumen de hoy',
@@ -117,7 +136,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                 final totalSpacing = 16 * (crossAxis - 1);
                 final cardWidth =
                     (constraints.maxWidth - totalSpacing) / crossAxis;
-                final aspect = cardWidth < 240 ? 1.35 : 1.7;
+                final aspect = cardWidth < 220
+                    ? 1.05
+                    : cardWidth < 280
+                    ? 1.25
+                    : 1.55;
                 return GridView.count(
                   crossAxisCount: crossAxis,
                   crossAxisSpacing: 16,
@@ -134,6 +157,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           : '${mesasState.totalLibres}/${mesasState.totalMesas}',
                       subtitle: 'Disponibles / Total',
                       color: AppColors.mesaLibre,
+                      onTap: () => context.go(AppRouter.mesas),
                     ),
                     _DashboardCard(
                       icon: Icons.receipt_long_rounded,
@@ -143,6 +167,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           : '${pedidosState.totalActivos}',
                       subtitle: 'En proceso',
                       color: AppColors.pedidoEnPreparacion,
+                      onTap: () => context.go(AppRouter.pedidos),
                     ),
                     _DashboardCard(
                       icon: Icons.table_restaurant_rounded,
@@ -152,6 +177,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           : '${mesasState.totalOcupadas}',
                       subtitle: 'Con clientes',
                       color: AppColors.mesaOcupada,
+                      onTap: () => context.go(AppRouter.mesas),
                     ),
                     if (puedeVerFinanzas)
                       _DashboardCard(
@@ -162,6 +188,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                             : currencyFormat.format(totalVentasHoy),
                         subtitle: 'Total hoy',
                         color: AppColors.primary,
+                        onTap: () => context.go(AppRouter.caja),
                       ),
                     if (puedeVerCotizaciones)
                       _DashboardCard(
@@ -178,15 +205,25 @@ class _HomePageState extends ConsumerState<HomePage> {
                 );
               },
             ),
+            const SizedBox(height: 20),
+            _buildQuickActions(context, rol),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(
+    BuildContext context,
+    String? nombreUsuario,
+    RolUsuario rol,
+  ) {
     final now = DateTime.now();
     final fecha = DateFormat('dd/MM/yyyy').format(now);
+    final saludo = nombreUsuario == null || nombreUsuario.trim().isEmpty
+        ? 'Bienvenido al sistema'
+        : 'Hola, $nombreUsuario · ${rol.label}';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: BoxDecoration(
@@ -194,77 +231,150 @@ class _HomePageState extends ConsumerState<HomePage> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.surfaceVariant),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.restaurant_rounded,
-              color: AppColors.primary,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'La Peña Bar & Restaurant',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Bienvenido al sistema',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSecondary,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 720;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.restaurant_rounded,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppColors.textHint),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.calendar_month_rounded,
-                  size: 16,
-                  color: AppColors.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  fecha,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'La Peña Bar & Restaurant',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          saludo,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
                 ),
-              ],
-            ),
-          ),
-        ],
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppColors.textHint),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.calendar_month_rounded,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        isCompact ? fecha : 'Hoy · $fecha',
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
+    );
+  }
+
+  Widget _buildQuickActions(BuildContext context, RolUsuario rol) {
+    final actions =
+        <({IconData icon, String label, String route})>[
+              (
+                icon: Icons.table_restaurant_rounded,
+                label: 'Mesas',
+                route: AppRouter.mesas,
+              ),
+              (
+                icon: Icons.receipt_long_rounded,
+                label: 'Pedidos',
+                route: AppRouter.pedidos,
+              ),
+              (
+                icon: Icons.soup_kitchen_rounded,
+                label: 'Cocina',
+                route: AppRouter.cocina,
+              ),
+              (
+                icon: Icons.point_of_sale_rounded,
+                label: 'Caja',
+                route: AppRouter.caja,
+              ),
+            ]
+            .where((item) => AppRouter.isRouteAllowedForRole(rol, item.route))
+            .toList();
+
+    if (actions.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Accesos rápidos',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final action in actions)
+              FilledButton.tonalIcon(
+                onPressed: () => context.go(action.route),
+                icon: Icon(action.icon),
+                label: Text(action.label),
+              ),
+          ],
+        ),
+      ],
     );
   }
 
   int _getCrossAxisCount(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    if (width > 1200) return 4;
-    if (width > 800) return 3;
-    return 2;
+    if (width >= 1200) return 4;
+    if (width >= 900) return 3;
+    if (width >= 600) return 2;
+    return 1;
   }
 }
 

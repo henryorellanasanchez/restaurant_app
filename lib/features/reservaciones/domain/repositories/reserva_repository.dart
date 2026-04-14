@@ -4,6 +4,7 @@ import 'package:restaurant_app/features/reservaciones/domain/entities/reserva.da
 /// Contrato del repositorio de reservaciones.
 abstract class ReservaRepository {
   ResultFuture<void> createReserva(Reserva reserva);
+  ResultFuture<void> updateReserva(Reserva reserva);
   ResultFuture<List<Reserva>> getReservasByMonth(
     String restaurantId,
     String startDate,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -5,11 +6,12 @@ import 'dart:convert';
 class SessionService {
   static const String _sessionKey = 'user_session';
   static const String _isLoggedInKey = 'is_logged_in';
+  static const String _failedPinAttemptsKey = 'failed_pin_attempts';
+  static const String _pinLockUntilKey = 'pin_lock_until';
 
   /// Guardar sesión del usuario
   static Future<bool> saveUserSession(Map<String, dynamic> userData) async {
     try {
-
       final prefs = await SharedPreferences.getInstance();
 
       // Guardar datos del usuario como JSON
@@ -28,7 +30,6 @@ class SessionService {
   /// Obtener sesión del usuario actual
   static Future<Map<String, dynamic>?> getCurrentUserSession() async {
     try {
-
       final prefs = await SharedPreferences.getInstance();
 
       // Verificar si está loggeado
@@ -70,10 +71,64 @@ class SessionService {
     }
   }
 
+  /// Obtener el número de intentos fallidos recientes de PIN.
+  static Future<int> getFailedPinAttempts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_failedPinAttemptsKey) ?? 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /// Obtiene hasta cuándo está bloqueado temporalmente el acceso por PIN.
+  static Future<DateTime?> getPinLockUntil() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_pinLockUntilKey);
+      if (raw == null || raw.isEmpty) return null;
+      return DateTime.tryParse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Registra un intento fallido y aplica bloqueo temporal si se supera el límite.
+  static Future<int> registerFailedPinAttempt({
+    int maxAttempts = 3,
+    Duration lockDuration = const Duration(seconds: 30),
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final attempts = (prefs.getInt(_failedPinAttemptsKey) ?? 0) + 1;
+      await prefs.setInt(_failedPinAttemptsKey, attempts);
+
+      if (attempts >= maxAttempts) {
+        final lockUntil = DateTime.now().add(lockDuration).toIso8601String();
+        await prefs.setString(_pinLockUntilKey, lockUntil);
+      }
+
+      return attempts;
+    } catch (e) {
+      return maxAttempts;
+    }
+  }
+
+  /// Limpia el contador de intentos y cualquier bloqueo temporal.
+  static Future<bool> clearPinSecurityState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_failedPinAttemptsKey);
+      await prefs.remove(_pinLockUntilKey);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Cerrar sesión del usuario
   static Future<bool> logout() async {
     try {
-
       final prefs = await SharedPreferences.getInstance();
 
       // Limpiar datos de sesión
@@ -91,7 +146,6 @@ class SessionService {
     Map<String, dynamic> updatedData,
   ) async {
     try {
-
       // Verificar que hay sesión activa
       final isLoggedIn = await isUserLoggedIn();
       if (!isLoggedIn) {
@@ -131,16 +185,14 @@ class SessionService {
     return session?['permission'];
   }
 
-  /// Método para debug - mostrar información de sesión
+  /// Método para debug - muestra sólo si hay sesión activa, sin datos sensibles
   static Future<void> debugSessionInfo() async {
-    try {
-
-      final isLoggedIn = await isUserLoggedIn();
-
-      if (isLoggedIn) {
-        final session = await getCurrentUserSession();
-      }
-    } catch (e) {
-    }
+    assert(() {
+      // Solo se ejecuta en debug builds; ignorado completamente en release
+      isUserLoggedIn().then((isLoggedIn) {
+        debugPrint('[Session] Estado: ${isLoggedIn ? 'activa' : 'inactiva'}');
+      });
+      return true;
+    }());
   }
 }

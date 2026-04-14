@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:restaurant_app/core/di/injection_container.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/caja/domain/entities/venta.dart';
 import 'package:restaurant_app/features/caja/presentation/providers/caja_provider.dart';
 import 'package:restaurant_app/features/pedidos/domain/entities/pedido.dart';
+import 'package:restaurant_app/services/facturacion/sri_service.dart';
 
 /// Diálogo de cobro de un pedido.
 ///
@@ -29,19 +31,29 @@ class CobroDialog extends ConsumerStatefulWidget {
 
 class _CobroDialogState extends ConsumerState<CobroDialog> {
   MetodoPago _metodoPago = MetodoPago.efectivo;
+  TipoComprobante _tipoComprobante = TipoComprobante.ticket;
   final _descuentoCtrl = TextEditingController(text: '0');
   final _descripcionCtrl = TextEditingController();
   final _efectivoCtrl = TextEditingController();
   final _clienteNombreCtrl = TextEditingController();
   final _clienteEmailCtrl = TextEditingController();
+  final _clienteIdCtrl = TextEditingController();
+  late final Future<SriConnectionStatus> _sriStatusFuture;
   bool _procesando = false;
 
   double get _subtotal => widget.pedido.totalCalculado;
   double get _descuento => double.tryParse(_descuentoCtrl.text) ?? 0;
   double get _total => (_subtotal - _descuento).clamp(0.0, _subtotal);
+  bool get _esConsumidorFinal => _tipoComprobante == TipoComprobante.ticket;
   double get _cambio {
     final efectivo = double.tryParse(_efectivoCtrl.text) ?? 0;
     return (efectivo - _total).clamp(0.0, double.maxFinite);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sriStatusFuture = sl<SriService>().getConnectionStatus();
   }
 
   @override
@@ -51,31 +63,47 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
     _efectivoCtrl.dispose();
     _clienteNombreCtrl.dispose();
     _clienteEmailCtrl.dispose();
+    _clienteIdCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _confirmar() async {
     final email = _clienteEmailCtrl.text.trim();
+    final clienteNombre = _clienteNombreCtrl.text.trim();
+    final clienteId = _clienteIdCtrl.text.trim();
+
     if (email.isNotEmpty && !_isEmailValid(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Correo electrónico inválido')),
       );
       return;
     }
+
+    if (_tipoComprobante == TipoComprobante.factura) {
+      if (clienteNombre.isEmpty || clienteId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Para factura completa nombre e identificación/RUC.'),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _procesando = true);
     final venta = await ref
         .read(cajaProvider.notifier)
         .cobrarPedido(
           pedido: widget.pedido,
           metodoPago: _metodoPago,
+          tipoComprobante: _tipoComprobante,
           descuento: _descuento,
           descripcion: _descripcionCtrl.text.trim().isEmpty
               ? null
               : _descripcionCtrl.text.trim(),
-          clienteNombre: _clienteNombreCtrl.text.trim().isEmpty
-              ? null
-              : _clienteNombreCtrl.text.trim(),
+          clienteNombre: clienteNombre.isEmpty ? null : clienteNombre,
           clienteEmail: email.isEmpty ? null : email,
+          clienteIdentificacion: clienteId.isEmpty ? null : clienteId,
         );
     if (!mounted) return;
     setState(() => _procesando = false);
@@ -228,9 +256,51 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
               ),
               const SizedBox(height: 16),
 
-              // ── Cliente (opcional) ──────────────────────────
+              // ── Cliente / tipo de emisión ───────────────────
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _esConsumidorFinal
+                      ? cs.primaryContainer.withValues(alpha: 0.45)
+                      : Colors.orange.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _esConsumidorFinal ? cs.primary : Colors.orange,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      _esConsumidorFinal
+                          ? Icons.person_outline_rounded
+                          : Icons.receipt_long_rounded,
+                      size: 18,
+                      color: _esConsumidorFinal ? cs.primary : Colors.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _esConsumidorFinal
+                            ? 'Ticket para consumidor final. Los datos del cliente son opcionales.'
+                            : 'Factura con cliente identificado. Se requiere nombre y cédula/RUC.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: _esConsumidorFinal
+                              ? cs.primary
+                              : Colors.orange,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               Text(
-                'Cliente (opcional)',
+                _esConsumidorFinal
+                    ? 'Datos del cliente (opcional)'
+                    : 'Datos del cliente para factura',
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -263,6 +333,96 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+
+              // ── Comprobante / Factura ────────────────────────
+              Text(
+                'Comprobante',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: TipoComprobante.values.map((tipo) {
+                  final selected = _tipoComprobante == tipo;
+                  return ChoiceChip(
+                    label: Text(tipo.label),
+                    avatar: Icon(
+                      tipo == TipoComprobante.factura
+                          ? Icons.receipt_long_rounded
+                          : Icons.receipt_outlined,
+                      size: 16,
+                    ),
+                    selected: selected,
+                    onSelected: (_) => setState(() => _tipoComprobante = tipo),
+                  );
+                }).toList(),
+              ),
+              if (_tipoComprobante == TipoComprobante.factura) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _clienteIdCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Cédula / RUC',
+                    helperText: 'Obligatorio para emitir factura',
+                    isDense: true,
+                    prefixIcon: Icon(Icons.badge_outlined),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                FutureBuilder<SriConnectionStatus>(
+                  future: _sriStatusFuture,
+                  builder: (context, snapshot) {
+                    final status = snapshot.data;
+                    final isReady = status?.canPrepareInvoice ?? false;
+                    final borderColor = isReady ? Colors.green : Colors.orange;
+                    final bgColor = isReady
+                        ? Colors.green.withValues(alpha: 0.08)
+                        : Colors.orange.withValues(alpha: 0.08);
+                    final message =
+                        snapshot.connectionState == ConnectionState.waiting
+                        ? 'Verificando configuración SRI…'
+                        : status == null
+                        ? 'No se pudo evaluar el estado SRI.'
+                        : '${status.message}\nAmbiente: ${status.environment} · Endpoint listo\nConexión real: comentada/desactivada.';
+
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            isReady
+                                ? Icons.verified_outlined
+                                : Icons.settings_ethernet_rounded,
+                            size: 18,
+                            color: borderColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              message,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: borderColor,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 16),
 
               // ── Método de pago ────────────────────────────────

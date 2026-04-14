@@ -167,7 +167,8 @@ class _NuevoPedidoPageState extends ConsumerState<NuevoPedidoPage>
     );
 
     final ok = await ref.read(pedidosProvider.notifier).crearPedido(pedido);
-    if (!ok || !mounted) {
+    if (!ok) {
+      if (!mounted) return;
       setState(() => _guardando = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -177,6 +178,8 @@ class _NuevoPedidoPageState extends ConsumerState<NuevoPedidoPage>
       );
       return;
     }
+
+    if (!mounted) return;
 
     // Agregar cada item al pedido
     bool todosOk = true;

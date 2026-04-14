@@ -226,49 +226,64 @@ class _MenuPageState extends ConsumerState<MenuPage>
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   color: colorScheme.surface,
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Menú',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Menú',
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                Text(
+                                  '${state.totalProductos} productos · '
+                                  '${state.totalCategorias} categorías',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
-                            Text(
-                              '${state.totalProductos} productos · '
-                              '${state.totalCategorias} categorías',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _openPublicPreview,
+                              icon: const Icon(
+                                Icons.visibility_outlined,
+                                size: 18,
                               ),
+                              label: const Text('Vista cliente'),
+                            ),
+                            const SizedBox(width: 8),
+                            // Botón nueva categoría
+                            OutlinedButton.icon(
+                              onPressed: _crearCategoria,
+                              icon: const Icon(
+                                Icons.create_new_folder_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('Categoría'),
+                            ),
+                            const SizedBox(width: 8),
+                            // Botón nuevo producto
+                            FilledButton.icon(
+                              onPressed: _crearProducto,
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Producto'),
                             ),
                           ],
                         ),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _openPublicPreview,
-                        icon: const Icon(Icons.visibility_outlined, size: 18),
-                        label: const Text('Vista cliente'),
-                      ),
-                      const SizedBox(width: 8),
-                      // Botón nueva categoría
-                      OutlinedButton.icon(
-                        onPressed: _crearCategoria,
-                        icon: const Icon(
-                          Icons.create_new_folder_outlined,
-                          size: 18,
-                        ),
-                        label: const Text('Categoría'),
-                      ),
-                      const SizedBox(width: 8),
-                      // Botón nuevo producto
-                      FilledButton.icon(
-                        onPressed: _crearProducto,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('Producto'),
                       ),
                     ],
                   ),
@@ -387,7 +402,7 @@ class _MenuPageState extends ConsumerState<MenuPage>
               : width < 900
               ? 260.0
               : 290.0;
-          final aspect = width < 520 ? 0.9 : 0.8;
+          final aspect = width < 520 ? 0.78 : 0.84;
           return GridView.builder(
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: maxExtent,

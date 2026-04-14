@@ -1,4 +1,6 @@
 import 'package:restaurant_app/core/database/database_helper.dart';
+import 'package:restaurant_app/core/domain/enums.dart';
+import 'package:restaurant_app/core/errors/exceptions.dart';
 import 'package:restaurant_app/features/usuarios/data/datasources/usuario_local_datasource.dart';
 import 'package:restaurant_app/features/usuarios/data/models/usuario_model.dart';
 
@@ -8,6 +10,40 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
     : _dbHelper = dbHelper;
 
   final DatabaseHelper _dbHelper;
+
+  void _validarPin(String? pin) {
+    final value = pin?.trim() ?? '';
+    if (!RegExp(r'^\d{4}$').hasMatch(value)) {
+      throw const BusinessException(
+        message: 'Cada usuario debe tener un PIN válido de 4 dígitos.',
+      );
+    }
+  }
+
+  Future<void> _validarAdministradorUnico({
+    required String restaurantId,
+    required RolUsuario rol,
+    String? excludeUserId,
+  }) async {
+    if (rol != RolUsuario.administrador) return;
+
+    final rows = await _dbHelper.query(
+      'usuarios',
+      where: excludeUserId == null
+          ? 'restaurant_id = ? AND rol = ? AND activo = 1'
+          : 'restaurant_id = ? AND rol = ? AND activo = 1 AND id != ?',
+      whereArgs: excludeUserId == null
+          ? [restaurantId, RolUsuario.administrador.value]
+          : [restaurantId, RolUsuario.administrador.value, excludeUserId],
+      limit: 1,
+    );
+
+    if (rows.isNotEmpty) {
+      throw const BusinessException(
+        message: 'Solo se permite un usuario administrador activo.',
+      );
+    }
+  }
 
   @override
   Future<List<UsuarioModel>> getUsuarios(String restaurantId) async {
@@ -34,12 +70,25 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
 
   @override
   Future<UsuarioModel> createUsuario(UsuarioModel usuario) async {
+    _validarPin(usuario.pin);
+    await _validarAdministradorUnico(
+      restaurantId: usuario.restaurantId,
+      rol: usuario.rol,
+    );
+
     await _dbHelper.insert('usuarios', usuario.toMap());
     return usuario;
   }
 
   @override
   Future<UsuarioModel> updateUsuario(UsuarioModel usuario) async {
+    _validarPin(usuario.pin);
+    await _validarAdministradorUnico(
+      restaurantId: usuario.restaurantId,
+      rol: usuario.rol,
+      excludeUserId: usuario.id,
+    );
+
     final updated = UsuarioModel.fromMap({
       ...usuario.toMap(),
       'updated_at': DateTime.now().toIso8601String(),
@@ -55,6 +104,31 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
 
   @override
   Future<void> deleteUsuario(String id) async {
+    final rows = await _dbHelper.query(
+      'usuarios',
+      where: 'id = ? AND activo = 1',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (rows.isNotEmpty) {
+      final usuario = UsuarioModel.fromMap(rows.first);
+      if (usuario.rol == RolUsuario.administrador) {
+        final admins = await _dbHelper.query(
+          'usuarios',
+          where: 'restaurant_id = ? AND rol = ? AND activo = 1',
+          whereArgs: [usuario.restaurantId, RolUsuario.administrador.value],
+          limit: 2,
+        );
+
+        if (admins.length <= 1) {
+          throw const BusinessException(
+            message: 'No se puede eliminar el único administrador activo.',
+          );
+        }
+      }
+    }
+
     await _dbHelper.update(
       'usuarios',
       {'activo': 0, 'updated_at': DateTime.now().toIso8601String()},

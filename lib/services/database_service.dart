@@ -1,6 +1,8 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
+import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'database_location_service.dart';
 import 'backup_service.dart';
 
@@ -40,7 +42,7 @@ class DatabaseService {
           );
 
           // Escribir el archivo
-          await File(path).writeAsBytes(bytes);
+          await File(path).writeAsBytes(bytes, flush: true);
 
           // Verificar que se copió correctamente
           if (!await File(path).exists()) {
@@ -56,7 +58,11 @@ class DatabaseService {
       }
 
       // Intentar abrir la base de datos
-      final db = await openDatabase(path, version: 1);
+      final db = await openDatabase(
+        path,
+        version: AppConstants.databaseVersion,
+        onUpgrade: _onDatabaseUpgrade,
+      );
 
       // Ejecutar respaldo automático si es necesario
       _performAutomaticBackupIfNeeded();
@@ -67,13 +73,34 @@ class DatabaseService {
     }
   }
 
+  /// Aplica migraciones de esquema al actualizar la versión de la BD.
+  /// Agregar nuevos `case` aquí cada vez que se modifique el esquema.
+  static Future<void> _onDatabaseUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    for (var v = oldVersion + 1; v <= newVersion; v++) {
+      switch (v) {
+        // Ejemplo para futuras versiones:
+        // case 12:
+        //   await db.execute('ALTER TABLE pedidos ADD COLUMN nota TEXT');
+        //   break;
+        default:
+          break;
+      }
+    }
+  }
+
   /// Ejecutar respaldo automático en segundo plano
   static void _performAutomaticBackupIfNeeded() {
     // Ejecutar en segundo plano sin bloquear la inicialización
-    Future.delayed(Duration(seconds: 2), () async {
+    Future.delayed(const Duration(seconds: 2), () async {
       try {
         await BackupService.performAutomaticBackupIfNeeded();
-      } catch (e) {}
+      } catch (e) {
+        debugPrint('Respaldo automático omitido: $e');
+      }
     });
   }
 
@@ -127,8 +154,9 @@ class DatabaseService {
     try {
       final path = await DatabaseLocationService.getDatabasePath();
       final exists = await DatabaseLocationService.databaseExists(path);
-      final size =
-          exists ? await DatabaseLocationService.getDatabaseSize(path) : 0.0;
+      final size = exists
+          ? await DatabaseLocationService.getDatabaseSize(path)
+          : 0.0;
 
       return {
         'path': path,

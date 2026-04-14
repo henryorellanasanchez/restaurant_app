@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:restaurant_app/core/constants/app_constants.dart';
-import 'package:restaurant_app/core/theme/app_colors.dart';
+import 'package:go_router/go_router.dart';
 import 'package:restaurant_app/config/routes/app_router.dart';
+import 'package:restaurant_app/core/constants/app_constants.dart';
+import 'package:restaurant_app/core/di/injection_container.dart';
+import 'package:restaurant_app/core/theme/app_colors.dart';
+import 'package:restaurant_app/features/auth/presentation/providers/auth_provider.dart';
 import 'package:restaurant_app/features/cotizaciones/presentation/providers/cotizacion_cart_provider.dart';
 import 'package:restaurant_app/features/cotizaciones/presentation/widgets/cotizacion_sheet.dart';
 import 'package:restaurant_app/features/menu/presentation/providers/menu_provider.dart';
 import 'package:restaurant_app/features/menu/presentation/widgets/public_producto_card.dart';
 import 'package:restaurant_app/features/mesas/presentation/providers/llamados_provider.dart';
-import 'package:go_router/go_router.dart';
 
 /// Menu publico accesible por QR.
 ///
@@ -62,6 +64,49 @@ class _MenuPublicPageState extends ConsumerState<MenuPublicPage>
     super.dispose();
   }
 
+  String? _resolveReturnRoute() {
+    final usuario = sl<AuthChangeNotifier>().usuario;
+    if (usuario == null) return null;
+
+    if (AppRouter.isRouteAllowedForRole(usuario.rol, AppRouter.menu)) {
+      return AppRouter.menu;
+    }
+    if (AppRouter.isRouteAllowedForRole(usuario.rol, AppRouter.home)) {
+      return AppRouter.home;
+    }
+    return null;
+  }
+
+  Widget _buildLeadingButton(BuildContext context) {
+    final returnRoute = _resolveReturnRoute();
+
+    if (returnRoute == null) {
+      return Padding(
+        padding: const EdgeInsets.all(10),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      );
+    }
+
+    return IconButton(
+      tooltip: 'Regresar',
+      icon: const Icon(Icons.arrow_back_rounded),
+      onPressed: () {
+        final navigator = Navigator.of(context);
+        if (navigator.canPop()) {
+          navigator.maybePop();
+          return;
+        }
+        context.go(returnRoute);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(menuProvider);
@@ -73,6 +118,7 @@ class _MenuPublicPageState extends ConsumerState<MenuPublicPage>
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F6B76),
         foregroundColor: Colors.white,
+        leading: _buildLeadingButton(context),
         title: _buildHeaderTitle(context),
         actions: [
           IconButton(
@@ -188,7 +234,7 @@ class _MenuPublicPageState extends ConsumerState<MenuPublicPage>
                   : width < 900
                   ? 260.0
                   : 300.0;
-              final aspect = width < 520 ? 0.82 : 0.72;
+              final aspect = width < 520 ? 0.74 : 0.76;
               return GridView.builder(
                 itemCount: productos.length,
                 shrinkWrap: true,
@@ -369,7 +415,7 @@ class _MenuPublicPageState extends ConsumerState<MenuPublicPage>
             const SizedBox(width: 12),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _callWaiter(context),
+                onPressed: _callWaiter,
                 icon: const Icon(Icons.campaign_rounded),
                 label: const Text('Llamar mesero'),
               ),
@@ -380,7 +426,7 @@ class _MenuPublicPageState extends ConsumerState<MenuPublicPage>
     );
   }
 
-  Future<void> _callWaiter(BuildContext context) async {
+  Future<void> _callWaiter() async {
     final mesaId = widget.mesaId;
     if (mesaId == null) return;
 

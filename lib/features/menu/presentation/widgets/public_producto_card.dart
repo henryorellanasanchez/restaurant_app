@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'package:restaurant_app/core/theme/app_colors.dart';
@@ -27,15 +29,7 @@ class PublicProductoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: producto.imagenUrl != null && producto.imagenUrl!.isNotEmpty
-                ? Image.network(
-                    producto.imagenUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _placeholder(cs),
-                  )
-                : _placeholder(cs),
-          ),
+          Expanded(child: _buildImage(producto.imagenUrl, cs)),
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -105,6 +99,51 @@ class PublicProductoCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildImage(String? imageValue, ColorScheme cs) {
+    final raw = imageValue?.trim();
+    if (raw == null || raw.isEmpty) return _placeholder(cs);
+
+    if (raw.startsWith('data:image')) {
+      final commaIndex = raw.indexOf(',');
+      if (commaIndex == -1) return _placeholder(cs);
+
+      try {
+        return Image.memory(
+          base64Decode(raw.substring(commaIndex + 1)),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          cacheWidth: 720,
+          filterQuality: FilterQuality.low,
+          errorBuilder: (_, __, ___) => _placeholder(cs),
+        );
+      } catch (_) {
+        return _placeholder(cs);
+      }
+    }
+
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return Image.network(
+        raw,
+        fit: BoxFit.cover,
+        cacheWidth: 720,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (_, __, ___) => _placeholder(cs),
+      );
+    }
+
+    if (raw.startsWith('assets/')) {
+      return Image.asset(
+        raw,
+        fit: BoxFit.cover,
+        cacheWidth: 720,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (_, __, ___) => _placeholder(cs),
+      );
+    }
+
+    return _placeholder(cs);
   }
 
   Widget _placeholder(ColorScheme cs) {

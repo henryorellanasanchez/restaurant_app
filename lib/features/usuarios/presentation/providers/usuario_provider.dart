@@ -80,6 +80,41 @@ class UsuarioNotifier extends StateNotifier<UsuarioState> {
 
   final _uuid = const Uuid();
 
+  int _countAdministradoresActivos({String? excludeUserId}) {
+    return state.usuarios.where((u) {
+      return u.activo &&
+          u.rol == RolUsuario.administrador &&
+          u.id != excludeUserId;
+    }).length;
+  }
+
+  String? _normalizePin(String? pin) {
+    final value = pin?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  String? _validateSecurityRules({
+    required RolUsuario rol,
+    required String? pin,
+    String? excludeUserId,
+  }) {
+    if (pin == null || pin.isEmpty) {
+      return 'Cada usuario debe tener un PIN de 4 dígitos.';
+    }
+
+    if (!RegExp(r'^\d{4}$').hasMatch(pin)) {
+      return 'El PIN debe tener exactamente 4 dígitos.';
+    }
+
+    if (rol == RolUsuario.administrador &&
+        _countAdministradoresActivos(excludeUserId: excludeUserId) > 0) {
+      return 'Solo se permite un usuario administrador activo.';
+    }
+
+    return null;
+  }
+
   Future<void> loadUsuarios() async {
     state = state.copyWith(isLoading: true, clearError: true);
     final result = await _getUsuarios(AppConstants.defaultRestaurantId);
@@ -102,13 +137,22 @@ class UsuarioNotifier extends StateNotifier<UsuarioState> {
     required RolUsuario rol,
   }) async {
     state = state.copyWith(isProcessing: true, clearError: true);
+
+    final normalizedPin = _normalizePin(pin);
+    final securityError = _validateSecurityRules(rol: rol, pin: normalizedPin);
+
+    if (securityError != null) {
+      state = state.copyWith(isProcessing: false, error: securityError);
+      return false;
+    }
+
     final ahora = DateTime.now();
     final usuario = Usuario(
       id: _uuid.v4(),
       restaurantId: AppConstants.defaultRestaurantId,
       nombre: nombre.trim(),
       email: email?.trim().isEmpty == true ? null : email?.trim(),
-      pin: pin?.trim().isEmpty == true ? null : pin?.trim(),
+      pin: normalizedPin,
       rol: rol,
       activo: true,
       createdAt: ahora,
@@ -141,11 +185,22 @@ class UsuarioNotifier extends StateNotifier<UsuarioState> {
   }) async {
     state = state.copyWith(isProcessing: true, clearError: true);
 
+    final normalizedPin = _normalizePin(pin) ?? _normalizePin(usuario.pin);
+    final securityError = _validateSecurityRules(
+      rol: rol,
+      pin: normalizedPin,
+      excludeUserId: usuario.id,
+    );
+
+    if (securityError != null) {
+      state = state.copyWith(isProcessing: false, error: securityError);
+      return false;
+    }
+
     final updated = usuario.copyWith(
       nombre: nombre.trim(),
       email: email?.trim().isEmpty == true ? null : email?.trim(),
-      // Si pin es vacío, mantenerlo igual; si tiene valor, actualizarlo
-      pin: pin?.trim().isEmpty == true ? usuario.pin : pin?.trim(),
+      pin: normalizedPin,
       rol: rol,
       updatedAt: DateTime.now(),
     );
@@ -170,6 +225,16 @@ class UsuarioNotifier extends StateNotifier<UsuarioState> {
 
   Future<bool> eliminarUsuario(Usuario usuario) async {
     state = state.copyWith(isProcessing: true, clearError: true);
+
+    if (usuario.rol == RolUsuario.administrador &&
+        _countAdministradoresActivos() <= 1) {
+      state = state.copyWith(
+        isProcessing: false,
+        error: 'No se puede eliminar el único administrador activo.',
+      );
+      return false;
+    }
+
     final result = await _deleteUsuario(usuario.id);
     return result.fold(
       (failure) {

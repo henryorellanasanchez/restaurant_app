@@ -1,7 +1,9 @@
 import 'package:get_it/get_it.dart';
 import 'package:restaurant_app/core/database/database_helper.dart';
 import 'package:restaurant_app/core/sync/sync_manager.dart';
+import 'package:restaurant_app/features/auth/presentation/providers/activation_provider.dart';
 import 'package:restaurant_app/features/auth/presentation/providers/auth_provider.dart';
+import 'package:restaurant_app/services/facturacion/sri_service.dart';
 
 // ── Mesas ────────────────────────────────────────────────────────────
 import 'package:restaurant_app/features/mesas/data/datasources/mesa_local_datasource.dart';
@@ -81,7 +83,11 @@ Future<void> initDependencies() async {
   // ── Core ─────────────────────────────────────────────────────────
   sl.registerLazySingleton<DatabaseHelper>(() => DatabaseHelper.instance);
   sl.registerLazySingleton<SyncManager>(() => SyncManager());
+  sl.registerLazySingleton<ActivationChangeNotifier>(
+    () => ActivationChangeNotifier(),
+  );
   sl.registerLazySingleton<AuthChangeNotifier>(() => AuthChangeNotifier());
+  sl.registerLazySingleton<SriService>(() => SriServiceImpl());
 
   // ── Features ─────────────────────────────────────────────────────
   _initMesas();
@@ -207,6 +213,7 @@ void _initReservas() {
     () => ReservaRepositoryImpl(dataSource: sl()),
   );
   sl.registerLazySingleton(() => CreateReserva(sl()));
+  sl.registerLazySingleton(() => UpdateReserva(sl()));
   sl.registerLazySingleton(() => GetReservasByMonth(sl()));
   sl.registerLazySingleton(() => GetReservasByDate(sl()));
 }

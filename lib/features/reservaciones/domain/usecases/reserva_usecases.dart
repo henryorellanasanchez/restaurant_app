@@ -11,6 +11,14 @@ class CreateReserva extends UseCase<void, Reserva> {
   ResultFuture<void> call(Reserva params) => _repo.createReserva(params);
 }
 
+class UpdateReserva extends UseCase<void, Reserva> {
+  final ReservaRepository _repo;
+  UpdateReserva(this._repo);
+
+  @override
+  ResultFuture<void> call(Reserva params) => _repo.updateReserva(params);
+}
+
 class GetReservasByMonth extends UseCase<List<Reserva>, List<String>> {
   final ReservaRepository _repo;
   GetReservasByMonth(this._repo);

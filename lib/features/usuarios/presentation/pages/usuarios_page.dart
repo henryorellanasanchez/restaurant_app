@@ -124,7 +124,7 @@ class UsuariosPage extends ConsumerWidget {
       ),
     );
 
-    if (confirm == true) {
+    if (confirm == true && context.mounted) {
       await ref.read(usuarioProvider.notifier).eliminarUsuario(usuario);
     }
   }
@@ -152,48 +152,61 @@ class _Header extends StatelessWidget {
     return Container(
       color: colors.surface,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.manage_accounts_rounded, size: 24),
-          const SizedBox(width: 10),
-          Text(
-            'Usuarios',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: colors.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '$totalUsuarios',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: colors.onPrimaryContainer,
-                fontSize: 12,
+          Row(
+            children: [
+              const Icon(Icons.manage_accounts_rounded, size: 24),
+              const SizedBox(width: 10),
+              Text(
+                'Usuarios',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
-            ),
-          ),
-          const Spacer(),
-          // Filtros de rol
-          _RolFilterChip(
-            label: 'Todos',
-            selected: filtroRol == null,
-            onTap: () => onFiltroChanged(null),
-          ),
-          const SizedBox(width: 4),
-          ...RolUsuario.values.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: _RolFilterChip(
-                label: r.label,
-                selected: filtroRol == r,
-                onTap: () => onFiltroChanged(filtroRol == r ? null : r),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colors.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$totalUsuarios',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: colors.onPrimaryContainer,
+                    fontSize: 12,
+                  ),
+                ),
               ),
+              const Spacer(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Filtros de rol en scroll horizontal para pantallas pequeñas
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _RolFilterChip(
+                  label: 'Todos',
+                  selected: filtroRol == null,
+                  onTap: () => onFiltroChanged(null),
+                ),
+                const SizedBox(width: 4),
+                ...RolUsuario.values.map(
+                  (r) => Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: _RolFilterChip(
+                      label: r.label,
+                      selected: filtroRol == r,
+                      onTap: () => onFiltroChanged(filtroRol == r ? null : r),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

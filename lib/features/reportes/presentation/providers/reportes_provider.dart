@@ -14,7 +14,8 @@ enum FiltroFecha {
   hoy,
   semana,
   mes,
-  trimestre;
+  trimestre,
+  personalizado;
 
   String get label {
     switch (this) {
@@ -26,6 +27,8 @@ enum FiltroFecha {
         return '30 días';
       case FiltroFecha.trimestre:
         return '3 meses';
+      case FiltroFecha.personalizado:
+        return 'Personalizado';
     }
   }
 
@@ -52,11 +55,17 @@ enum FiltroFecha {
           ahora.month,
           ahora.day,
         ).subtract(const Duration(days: 89));
+      case FiltroFecha.personalizado:
+        return DateTime(
+          ahora.year,
+          ahora.month,
+          ahora.day,
+        ).subtract(const Duration(days: 6));
     }
   }
 
   DateTime fechaFin(DateTime ahora) =>
-      DateTime(ahora.year, ahora.month, ahora.day);
+      DateTime(ahora.year, ahora.month, ahora.day, 23, 59, 59, 999);
 }
 
 // ── Estado ─────────────────────────────────────────────────────────────────────
@@ -68,6 +77,8 @@ class ReportesState {
   final List<ProductoVendido> topProductos;
   final List<VentaPorMetodo> ventasPorMetodo;
   final List<VentaPorMesero> ventasPorMesero;
+  final DateTime? fechaInicioPersonalizada;
+  final DateTime? fechaFinPersonalizada;
   final bool isLoading;
   final String? error;
 
@@ -78,9 +89,38 @@ class ReportesState {
     this.topProductos = const [],
     this.ventasPorMetodo = const [],
     this.ventasPorMesero = const [],
+    this.fechaInicioPersonalizada,
+    this.fechaFinPersonalizada,
     this.isLoading = false,
     this.error,
   });
+
+  DateTime fechaInicioActiva(DateTime ahora) {
+    if (filtro == FiltroFecha.personalizado &&
+        fechaInicioPersonalizada != null) {
+      return DateTime(
+        fechaInicioPersonalizada!.year,
+        fechaInicioPersonalizada!.month,
+        fechaInicioPersonalizada!.day,
+      );
+    }
+    return filtro.fechaInicio(ahora);
+  }
+
+  DateTime fechaFinActiva(DateTime ahora) {
+    if (filtro == FiltroFecha.personalizado && fechaFinPersonalizada != null) {
+      return DateTime(
+        fechaFinPersonalizada!.year,
+        fechaFinPersonalizada!.month,
+        fechaFinPersonalizada!.day,
+        23,
+        59,
+        59,
+        999,
+      );
+    }
+    return filtro.fechaFin(ahora);
+  }
 
   ReportesState copyWith({
     FiltroFecha? filtro,
@@ -89,6 +129,8 @@ class ReportesState {
     List<ProductoVendido>? topProductos,
     List<VentaPorMetodo>? ventasPorMetodo,
     List<VentaPorMesero>? ventasPorMesero,
+    DateTime? fechaInicioPersonalizada,
+    DateTime? fechaFinPersonalizada,
     bool? isLoading,
     String? error,
     bool clearError = false,
@@ -100,6 +142,10 @@ class ReportesState {
       topProductos: topProductos ?? this.topProductos,
       ventasPorMetodo: ventasPorMetodo ?? this.ventasPorMetodo,
       ventasPorMesero: ventasPorMesero ?? this.ventasPorMesero,
+      fechaInicioPersonalizada:
+          fechaInicioPersonalizada ?? this.fechaInicioPersonalizada,
+      fechaFinPersonalizada:
+          fechaFinPersonalizada ?? this.fechaFinPersonalizada,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : error ?? this.error,
     );
@@ -132,7 +178,42 @@ class ReportesNotifier extends StateNotifier<ReportesState> {
 
   /// Cambia el filtro de período y recarga automáticamente.
   Future<void> cambiarFiltro(FiltroFecha filtro) async {
-    state = state.copyWith(filtro: filtro);
+    if (filtro == FiltroFecha.personalizado) {
+      final ahora = DateTime.now();
+      state = state.copyWith(
+        filtro: filtro,
+        fechaInicioPersonalizada:
+            state.fechaInicioPersonalizada ?? filtro.fechaInicio(ahora),
+        fechaFinPersonalizada:
+            state.fechaFinPersonalizada ?? filtro.fechaFin(ahora),
+      );
+    } else {
+      state = state.copyWith(filtro: filtro);
+    }
+    await cargarReportes();
+  }
+
+  Future<void> cambiarRangoPersonalizado(
+    DateTime fechaInicio,
+    DateTime fechaFin,
+  ) async {
+    state = state.copyWith(
+      filtro: FiltroFecha.personalizado,
+      fechaInicioPersonalizada: DateTime(
+        fechaInicio.year,
+        fechaInicio.month,
+        fechaInicio.day,
+      ),
+      fechaFinPersonalizada: DateTime(
+        fechaFin.year,
+        fechaFin.month,
+        fechaFin.day,
+        23,
+        59,
+        59,
+        999,
+      ),
+    );
     await cargarReportes();
   }
 
@@ -141,8 +222,8 @@ class ReportesNotifier extends StateNotifier<ReportesState> {
     state = state.copyWith(isLoading: true, clearError: true);
 
     final ahora = DateTime.now();
-    final inicio = state.filtro.fechaInicio(ahora);
-    final fin = state.filtro.fechaFin(ahora);
+    final inicio = state.fechaInicioActiva(ahora);
+    final fin = state.fechaFinActiva(ahora);
     final restaurantId = AppConstants.defaultRestaurantId;
 
     final params = FiltroReporteParams(
@@ -170,15 +251,19 @@ class ReportesNotifier extends StateNotifier<ReportesState> {
     final diasResult = results[1];
     final productosResult = results[2];
     final metodosResult = results[3];
-    final mserosResult = results[4];
+    final meserosResult = results[4];
 
-    String? errorMsg;
-
-    resumenResult.fold((f) => errorMsg = f.toString(), (_) {});
+    final errores = <String>[
+      resumenResult.fold((f) => f.message, (_) => ''),
+      diasResult.fold((f) => f.message, (_) => ''),
+      productosResult.fold((f) => f.message, (_) => ''),
+      metodosResult.fold((f) => f.message, (_) => ''),
+      meserosResult.fold((f) => f.message, (_) => ''),
+    ].where((m) => m.isNotEmpty).toSet().toList();
 
     state = state.copyWith(
       isLoading: false,
-      error: errorMsg,
+      error: errores.isEmpty ? null : errores.join('\n'),
       resumen: resumenResult.fold((_) => null, (r) => r as ResumenVentas),
       ventasPorDia: diasResult.fold((_) => [], (r) => r as List<VentaPorDia>),
       topProductos: productosResult.fold(
@@ -189,7 +274,7 @@ class ReportesNotifier extends StateNotifier<ReportesState> {
         (_) => [],
         (r) => r as List<VentaPorMetodo>,
       ),
-      ventasPorMesero: mserosResult.fold(
+      ventasPorMesero: meserosResult.fold(
         (_) => [],
         (r) => r as List<VentaPorMesero>,
       ),

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:restaurant_app/core/di/injection_container.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/auth/presentation/pages/login_page.dart';
+import 'package:restaurant_app/features/auth/presentation/providers/activation_provider.dart';
 import 'package:restaurant_app/features/auth/presentation/providers/auth_provider.dart';
 import 'package:restaurant_app/features/home/presentation/pages/home_page.dart';
 import 'package:restaurant_app/features/mesas/presentation/pages/mesas_page.dart';
@@ -48,14 +49,18 @@ class AppRouter {
   static const String sincronizacion = '/sincronizacion';
 
   /// Retorna la ruta inicial según el rol del usuario.
-  static String _homeRouteForRole(RolUsuario rol) {
+  static String homeRouteForRole(RolUsuario rol) {
     return switch (rol) {
       RolUsuario.cocina => cocina,
       _ => home,
     };
   }
 
-  static bool _isRouteAllowedForRole(RolUsuario rol, String location) {
+  /// Valida si un rol puede acceder a una ruta concreta.
+  ///
+  /// Esta función centraliza la política de acceso para evitar duplicidad
+  /// entre router, navegación lateral y otras pantallas.
+  static bool isRouteAllowedForRole(RolUsuario rol, String location) {
     if (rol.esAdmin) return true;
 
     if (location == menuPublico || location.startsWith('$menuPublico/')) {
@@ -66,38 +71,42 @@ class AppRouter {
       return true;
     }
 
-    final allowed = switch (rol) {
-      RolUsuario.cocina => {cocina},
-      RolUsuario.cajero => {home, pedidos, caja, reportes},
-      RolUsuario.mesero => {home, mesas, pedidos},
-      RolUsuario.administrador => {
-        home,
-        mesas,
-        pedidos,
-        cocina,
-        menu,
-        reservas,
-        cotizaciones,
-        caja,
-        reportes,
-        usuarios,
-        sincronizacion,
-      },
+    final accessByRoute = <String, bool Function(RolUsuario)>{
+      home: (r) => r.puedeVerInicio,
+      mesas: (r) => r.puedeGestionarMesas,
+      pedidos: (r) => r.puedeGestionarPedidos,
+      cocina: (r) => r.puedeGestionarCocina,
+      menu: (r) => r.puedeGestionarMenu,
+      reservas: (r) => r.puedeGestionarReservas,
+      cotizaciones: (r) => r.puedeGestionarCotizaciones,
+      caja: (r) => r.puedeGestionarCaja,
+      reportes: (r) => r.puedeVerReportes,
+      usuarios: (r) => r.puedeGestionarUsuarios,
+      sincronizacion: (r) => r.puedeSincronizar,
     };
 
-    return allowed.any(
-      (route) => location == route || location.startsWith('$route/'),
+    return accessByRoute.entries.any(
+      (entry) =>
+          (location == entry.key || location.startsWith('${entry.key}/')) &&
+          entry.value(rol),
     );
   }
 
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: home,
-    refreshListenable: sl<AuthChangeNotifier>(),
+    refreshListenable: Listenable.merge([
+      sl<AuthChangeNotifier>(),
+      sl<ActivationChangeNotifier>(),
+    ]),
     redirect: (context, state) {
       final auth = sl<AuthChangeNotifier>();
+      final activation = sl<ActivationChangeNotifier>();
       final isLoggedIn = auth.isAuthenticated;
       final isLoginRoute = state.matchedLocation == login;
+
+      if (!activation.canAccessApp && !isLoginRoute) return login;
+      if (!activation.canAccessApp && isLoginRoute) return null;
 
       if (!isLoggedIn &&
           (state.matchedLocation == menuPublico ||
@@ -111,11 +120,11 @@ class AppRouter {
       }
       if (!isLoggedIn && !isLoginRoute) return login;
       if (isLoggedIn && isLoginRoute) {
-        return _homeRouteForRole(auth.usuario!.rol);
+        return homeRouteForRole(auth.usuario!.rol);
       }
       if (isLoggedIn &&
-          !_isRouteAllowedForRole(auth.usuario!.rol, state.matchedLocation)) {
-        return _homeRouteForRole(auth.usuario!.rol);
+          !isRouteAllowedForRole(auth.usuario!.rol, state.matchedLocation)) {
+        return homeRouteForRole(auth.usuario!.rol);
       }
       return null;
     },

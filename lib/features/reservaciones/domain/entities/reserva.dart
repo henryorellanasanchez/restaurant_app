@@ -9,10 +9,16 @@ class Reserva extends Equatable {
   final String? mesaId;
   final String? mesaNombre;
   final String fecha; // YYYY-MM-DD
+  final String horaInicio;
+  final String horaFin;
+  final int numeroPersonas;
+  final EstadoReserva estado;
+  final String? tipoEvento;
   final String clienteNombre;
   final String clienteTelefono;
   final String clienteEmail;
   final String? notas;
+  final String? requerimientos;
   final DateTime createdAt;
 
   const Reserva({
@@ -22,12 +28,21 @@ class Reserva extends Equatable {
     this.mesaId,
     this.mesaNombre,
     required this.fecha,
+    this.horaInicio = '19:00',
+    this.horaFin = '20:30',
+    this.numeroPersonas = 2,
+    this.estado = EstadoReserva.pendiente,
+    this.tipoEvento,
     required this.clienteNombre,
     required this.clienteTelefono,
     required this.clienteEmail,
     this.notas,
+    this.requerimientos,
     required this.createdAt,
   });
+
+  bool get esEventoPrivado => tipo == TipoReserva.local;
+  String get horarioLabel => '$horaInicio - $horaFin';
 
   Reserva copyWith({
     String? id,
@@ -36,10 +51,16 @@ class Reserva extends Equatable {
     String? mesaId,
     String? mesaNombre,
     String? fecha,
+    String? horaInicio,
+    String? horaFin,
+    int? numeroPersonas,
+    EstadoReserva? estado,
+    String? tipoEvento,
     String? clienteNombre,
     String? clienteTelefono,
     String? clienteEmail,
     String? notas,
+    String? requerimientos,
     DateTime? createdAt,
   }) {
     return Reserva(
@@ -49,10 +70,16 @@ class Reserva extends Equatable {
       mesaId: mesaId ?? this.mesaId,
       mesaNombre: mesaNombre ?? this.mesaNombre,
       fecha: fecha ?? this.fecha,
+      horaInicio: horaInicio ?? this.horaInicio,
+      horaFin: horaFin ?? this.horaFin,
+      numeroPersonas: numeroPersonas ?? this.numeroPersonas,
+      estado: estado ?? this.estado,
+      tipoEvento: tipoEvento ?? this.tipoEvento,
       clienteNombre: clienteNombre ?? this.clienteNombre,
       clienteTelefono: clienteTelefono ?? this.clienteTelefono,
       clienteEmail: clienteEmail ?? this.clienteEmail,
       notas: notas ?? this.notas,
+      requerimientos: requerimientos ?? this.requerimientos,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -65,10 +92,16 @@ class Reserva extends Equatable {
     mesaId,
     mesaNombre,
     fecha,
+    horaInicio,
+    horaFin,
+    numeroPersonas,
+    estado,
+    tipoEvento,
     clienteNombre,
     clienteTelefono,
     clienteEmail,
     notas,
+    requerimientos,
     createdAt,
   ];
 }

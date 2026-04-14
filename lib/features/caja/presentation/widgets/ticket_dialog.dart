@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/caja/domain/entities/venta.dart';
+import 'package:restaurant_app/features/caja/domain/entities/venta_detalle.dart';
 
 // ── Datos del establecimiento ─────────────────────────────────────────────
 const _kNegocio = 'La Peña Bar & Restaurant';
@@ -39,9 +41,175 @@ class TicketDialog extends StatelessWidget {
   double get _descuento =>
       (venta.subtotal - venta.total).clamp(0.0, double.maxFinite);
   bool get _tieneDescuento => _descuento > 0.01;
+  bool get _esFactura => venta.tipoComprobante == TipoComprobante.factura;
+  bool get _esConsumidorFinal =>
+      !_esFactura &&
+      (venta.clienteNombre == null || venta.clienteNombre!.trim().isEmpty) &&
+      (venta.clienteIdentificacion == null ||
+          venta.clienteIdentificacion!.trim().isEmpty);
+  bool get _tieneDetalles => venta.detalles.isNotEmpty;
+  int get _cantidadItems =>
+      venta.detalles.fold(0, (sum, d) => sum + d.cantidad);
+
+  String get _clienteDisplayName => _esConsumidorFinal
+      ? 'Consumidor final'
+      : (venta.clienteNombre?.trim().isNotEmpty == true
+            ? venta.clienteNombre!
+            : 'Cliente identificado');
+
+  String get _tipoClienteLabel => _esFactura
+      ? 'Cliente para factura'
+      : (_esConsumidorFinal ? 'Consumidor final' : 'Cliente registrado');
 
   String get _folio =>
       '#${venta.id.replaceAll('-', '').toUpperCase().substring(0, 8)}';
+
+  String _detalleNombre(VentaDetalle detalle) {
+    return detalle.varianteNombre != null
+        ? '${detalle.productoNombre ?? '-'} (${detalle.varianteNombre})'
+        : (detalle.productoNombre ?? 'Consumo registrado');
+  }
+
+  String _detalleResumen(VentaDetalle detalle, NumberFormat fmt) {
+    return '${detalle.cantidad} × \$${fmt.format(detalle.precioUnitario)}';
+  }
+
+  String get _leyendaSri {
+    if (!_esFactura) {
+      return 'Este comprobante no es válido como factura fiscal.';
+    }
+    return venta.estadoSri == EstadoComprobanteSri.preparado
+        ? 'Factura preparada localmente. El envío al backend/SRI quedó comentado hasta activarlo.'
+        : (venta.sriMensaje ?? 'Factura pendiente de configuración SRI.');
+  }
+
+  // ── Vista XML del comprobante ─────────────────────────────────────────────
+
+  void _verXml(BuildContext context) {
+    final xml = venta.sriMensaje ?? '';
+    // El XML real está en el draft; usamos la clave de acceso como referencia
+    final claveAcceso = venta.sriClaveAcceso ?? '';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.code_rounded, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Comprobante electrónico')),
+          ],
+        ),
+        content: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Clave de acceso
+                Text(
+                  'Clave de acceso SRI',
+                  style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        claveAcceso,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, size: 18),
+                      tooltip: 'Copiar clave',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: claveAcceso));
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('Clave de acceso copiada.'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const Divider(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Estado',
+                      style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.1,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Chip(
+                      label: Text(
+                        venta.estadoSri.label,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      backgroundColor:
+                          venta.estadoSri == EstadoComprobanteSri.preparado
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : Colors.orange.withValues(alpha: 0.15),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Text(
+                    xml.isNotEmpty
+                        ? xml
+                        : 'El XML se genera en tiempo real al cobrar. Registra una nueva venta de tipo Factura para verlo.',
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'La transmisión real al SRI requiere activar el backend puente. '
+                    'El XML y la clave de acceso ya están generados y listos para enviarse.',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   // ── Impresión PDF ────────────────────────────────────────────────────────
 
@@ -120,16 +288,27 @@ class TicketDialog extends StatelessWidget {
                   ),
                 ),
               ],
+              pw.SizedBox(height: 2),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text('Cliente: $_clienteDisplayName', style: normal),
+              ),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text('Tipo: $_tipoClienteLabel', style: small),
+              ),
               if (venta.clienteNombre != null ||
-                  venta.clienteEmail != null) ...[
-                pw.SizedBox(height: 2),
-                pw.Align(
-                  alignment: pw.Alignment.centerLeft,
-                  child: pw.Text(
-                    'Cliente: ${venta.clienteNombre ?? '-'}',
-                    style: normal,
+                  venta.clienteEmail != null ||
+                  venta.clienteIdentificacion != null) ...[
+                if (venta.clienteIdentificacion != null &&
+                    venta.clienteIdentificacion!.isNotEmpty)
+                  pw.Align(
+                    alignment: pw.Alignment.centerLeft,
+                    child: pw.Text(
+                      'ID/RUC: ${venta.clienteIdentificacion!}',
+                      style: small,
+                    ),
                   ),
-                ),
                 if (venta.clienteEmail != null &&
                     venta.clienteEmail!.isNotEmpty)
                   pw.Align(
@@ -145,7 +324,7 @@ class TicketDialog extends StatelessWidget {
               pw.Table(
                 columnWidths: {
                   0: const pw.FlexColumnWidth(3),
-                  1: const pw.FixedColumnWidth(28),
+                  1: const pw.FixedColumnWidth(54),
                   2: const pw.FixedColumnWidth(54),
                 },
                 children: [
@@ -159,7 +338,7 @@ class TicketDialog extends StatelessWidget {
                         ),
                       ),
                       pw.Text(
-                        'CNT',
+                        'DETALLE',
                         style: pw.TextStyle(
                           fontSize: 7.5,
                           fontWeight: pw.FontWeight.bold,
@@ -176,20 +355,42 @@ class TicketDialog extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (!_tieneDetalles)
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                          child: pw.Text('Detalle no disponible', style: small),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                          child: pw.Text(
+                            '—',
+                            style: small,
+                            textAlign: pw.TextAlign.center,
+                          ),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                          child: pw.Text(
+                            '\$${fmt.format(venta.total)}',
+                            style: small,
+                            textAlign: pw.TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    ),
                   ...venta.detalles.map((d) {
-                    final nombre = d.varianteNombre != null
-                        ? '${d.productoNombre ?? '-'} (${d.varianteNombre})'
-                        : (d.productoNombre ?? '—');
                     return pw.TableRow(
                       children: [
                         pw.Padding(
                           padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
-                          child: pw.Text(nombre, style: small),
+                          child: pw.Text(_detalleNombre(d), style: small),
                         ),
                         pw.Padding(
                           padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
                           child: pw.Text(
-                            '${d.cantidad}',
+                            _detalleResumen(d, fmt),
                             style: small,
                             textAlign: pw.TextAlign.center,
                           ),
@@ -257,10 +458,29 @@ class TicketDialog extends StatelessWidget {
               pw.Align(
                 alignment: pw.Alignment.centerLeft,
                 child: pw.Text(
+                  'Comprobante: ${venta.tipoComprobante.label}',
+                  style: bold,
+                ),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text(
                   'Forma de pago: ${venta.metodoPago.label}',
                   style: bold,
                 ),
               ),
+              if (venta.sriClaveAcceso != null &&
+                  venta.sriClaveAcceso!.isNotEmpty) ...[
+                pw.SizedBox(height: 2),
+                pw.Align(
+                  alignment: pw.Alignment.centerLeft,
+                  child: pw.Text(
+                    'Referencia SRI: ${venta.sriClaveAcceso}',
+                    style: small,
+                  ),
+                ),
+              ],
               if (venta.descripcionPago != null &&
                   venta.descripcionPago!.isNotEmpty) ...[
                 pw.SizedBox(height: 2),
@@ -296,7 +516,7 @@ class TicketDialog extends StatelessWidget {
               pw.SizedBox(height: 4),
               pw.Center(
                 child: pw.Text(
-                  'Este comprobante no es válido como factura fiscal.',
+                  _leyendaSri,
                   style: pw.TextStyle(fontSize: 6.5),
                   textAlign: pw.TextAlign.center,
                 ),
@@ -449,36 +669,71 @@ class TicketDialog extends StatelessWidget {
                       ),
                     ],
 
-                    if (venta.clienteNombre != null ||
-                        venta.clienteEmail != null) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _LabelSm('CLIENTE', theme),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _LabelSm('CLIENTE', theme),
+                              Text(
+                                _clienteDisplayName,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                _tipoClienteLabel,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: _esFactura
+                                      ? Colors.orange.shade700
+                                      : cs.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (venta.clienteEmail != null &&
+                                  venta.clienteEmail!.isNotEmpty)
                                 Text(
-                                  venta.clienteNombre ?? '—',
+                                  venta.clienteEmail!,
                                   style: theme.textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
+                                    color: cs.onSurfaceVariant,
                                   ),
                                 ),
-                                if (venta.clienteEmail != null &&
-                                    venta.clienteEmail!.isNotEmpty)
-                                  Text(
-                                    venta.clienteEmail!,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                    ),
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _TicketMetaChip(
+                          icon: Icons.shopping_bag_outlined,
+                          label: _cantidadItems > 0
+                              ? '$_cantidadItems artículo(s)'
+                              : 'Consumo registrado',
+                        ),
+                        if (mesaNombre != null)
+                          _TicketMetaChip(
+                            icon: Icons.table_restaurant_rounded,
+                            label: mesaNombre!,
+                          ),
+                        _TicketMetaChip(
+                          icon: _iconMetodo(venta.metodoPago),
+                          label: venta.metodoPago.label,
+                        ),
+                        _TicketMetaChip(
+                          icon: _esFactura
+                              ? Icons.receipt_long_rounded
+                              : Icons.person_outline_rounded,
+                          label: _esFactura ? 'Factura' : 'Consumidor final',
+                        ),
+                      ],
+                    ),
 
                     const SizedBox(height: 12),
                     const _DashedDivider(),
@@ -495,8 +750,8 @@ class TicketDialog extends StatelessWidget {
                         children: const [
                           Expanded(child: Text('ARTÍCULO')),
                           SizedBox(
-                            width: 28,
-                            child: Text('CNT', textAlign: TextAlign.center),
+                            width: 88,
+                            child: Text('DETALLE', textAlign: TextAlign.center),
                           ),
                           SizedBox(width: 8),
                           SizedBox(
@@ -509,25 +764,50 @@ class TicketDialog extends StatelessWidget {
                     const SizedBox(height: 4),
 
                     // Artículos
+                    if (!_tieneDetalles)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8, top: 4),
+                        child: Text(
+                          'El detalle del pedido no está disponible en este comprobante.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
                     ...venta.detalles.map((d) {
-                      final nombre = d.varianteNombre != null
-                          ? '${d.productoNombre ?? '-'} (${d.varianteNombre})'
-                          : (d.productoNombre ?? '—');
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 5),
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(
-                                nombre,
-                                style: theme.textTheme.bodySmall,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _detalleNombre(d),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    d.varianteNombre != null &&
+                                            d.varianteNombre!.isNotEmpty
+                                        ? 'Variante: ${d.varianteNombre}'
+                                        : 'Producto del pedido',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             SizedBox(
-                              width: 28,
+                              width: 88,
                               child: Text(
-                                '${d.cantidad}',
+                                _detalleResumen(d, fmt),
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: cs.primary,
@@ -542,7 +822,7 @@ class TicketDialog extends StatelessWidget {
                                 '\$${fmt.format(d.subtotal)}',
                                 textAlign: TextAlign.right,
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -619,6 +899,31 @@ class TicketDialog extends StatelessWidget {
                     Row(
                       children: [
                         Icon(
+                          _esFactura
+                              ? Icons.receipt_long_outlined
+                              : Icons.receipt_outlined,
+                          size: 16,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Comprobante: ',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          venta.tipoComprobante.label,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
                           _iconMetodo(venta.metodoPago),
                           size: 16,
                           color: cs.onSurfaceVariant,
@@ -638,6 +943,26 @@ class TicketDialog extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (venta.clienteIdentificacion != null &&
+                        venta.clienteIdentificacion!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'ID/RUC: ${venta.clienteIdentificacion}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (venta.sriClaveAcceso != null &&
+                        venta.sriClaveAcceso!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Referencia SRI: ${venta.sriClaveAcceso}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (venta.descripcionPago != null &&
                         venta.descripcionPago!.isNotEmpty) ...[
                       const SizedBox(height: 4),
@@ -675,7 +1000,7 @@ class TicketDialog extends StatelessWidget {
                     const SizedBox(height: 4),
                     Center(
                       child: Text(
-                        'Este comprobante no es válido como factura fiscal.',
+                        _leyendaSri,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: cs.onSurfaceVariant.withValues(alpha: 0.55),
                         ),
@@ -699,6 +1024,16 @@ class TicketDialog extends StatelessWidget {
                     icon: const Icon(Icons.print_outlined, size: 18),
                     label: const Text('Imprimir'),
                   ),
+                  if (_esFactura &&
+                      venta.sriClaveAcceso != null &&
+                      venta.sriClaveAcceso!.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => _verXml(context),
+                      icon: const Icon(Icons.code_rounded, size: 18),
+                      label: const Text('Ver XML'),
+                    ),
+                  ],
                   const Spacer(),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(),
@@ -742,6 +1077,40 @@ class _LabelSm extends StatelessWidget {
 }
 
 /// Divisor con línea punteada estilo ticket térmico.
+class _TicketMetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _TicketMetaChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: cs.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DashedDivider extends StatelessWidget {
   const _DashedDivider();
 

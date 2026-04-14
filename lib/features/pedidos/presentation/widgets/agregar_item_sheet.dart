@@ -391,6 +391,7 @@ class _ProductoTile extends StatelessWidget {
               )
             : null,
         trailing: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [

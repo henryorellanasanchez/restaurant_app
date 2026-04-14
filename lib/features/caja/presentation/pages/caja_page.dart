@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/caja/presentation/providers/caja_provider.dart';
 import 'package:restaurant_app/features/caja/presentation/widgets/cobro_dialog.dart';
+import 'package:restaurant_app/features/caja/presentation/widgets/configuracion_fiscal_dialog.dart';
 import 'package:restaurant_app/features/caja/presentation/widgets/ticket_dialog.dart';
 import 'package:restaurant_app/features/caja/presentation/widgets/venta_card.dart';
 import 'package:restaurant_app/features/pedidos/domain/entities/pedido.dart';
+import 'package:restaurant_app/core/di/injection_container.dart';
+import 'package:restaurant_app/features/auth/presentation/providers/auth_provider.dart';
 
 /// Página principal del módulo de Caja.
 ///
@@ -22,6 +29,7 @@ class CajaPage extends ConsumerStatefulWidget {
 class _CajaPageState extends ConsumerState<CajaPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final _moneda = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
   bool _verTodas = false;
 
   @override
@@ -77,6 +85,186 @@ class _CajaPageState extends ConsumerState<CajaPage>
     );
   }
 
+  Future<void> _exportarCierreComercialPdf(CajaState state) async {
+    final ahora = DateTime.now();
+    final generado = DateFormat('dd/MM/yyyy HH:mm').format(ahora);
+    final fileStamp = DateFormat('yyyyMMdd_HHmm').format(ahora);
+
+    pw.Widget metric(String label, String value) {
+      return pw.Container(
+        width: 120,
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey300),
+          borderRadius: pw.BorderRadius.circular(8),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(label, style: const pw.TextStyle(fontSize: 9)),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              value,
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        build: (_) => [
+          pw.Text(
+            'Cierre comercial · La Peña',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text('Generado: $generado'),
+          pw.SizedBox(height: 16),
+          pw.Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              metric('Ventas del día', _moneda.format(state.totalVentasHoy)),
+              metric('Transacciones', '${state.cantidadVentasHoy}'),
+              metric(
+                'Ticket promedio',
+                _moneda.format(state.ticketPromedioHoy),
+              ),
+              metric(
+                'Pendiente por cobrar',
+                _moneda.format(state.totalPendientePorCobrar),
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'Métodos de pago',
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          if (state.ventasPorMetodo.isEmpty)
+            pw.Text('Sin ventas registradas hoy.')
+          else
+            pw.TableHelper.fromTextArray(
+              headers: ['Método', 'Monto'],
+              data: [
+                for (final entry in state.ventasPorMetodo.entries)
+                  [entry.key.label, _moneda.format(entry.value)],
+              ],
+            ),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (_) async => pdf.save(),
+      name: 'cierre_comercial_$fileStamp.pdf',
+    );
+  }
+
+  void _mostrarCierreComercial(CajaState state) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Cierre comercial del día',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.attach_money_rounded),
+                  title: const Text('Total vendido hoy'),
+                  trailing: Text(
+                    _moneda.format(state.totalVentasHoy),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.receipt_long_rounded),
+                  title: const Text('Transacciones'),
+                  trailing: Text('${state.cantidadVentasHoy}'),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.trending_up_rounded),
+                  title: const Text('Ticket promedio'),
+                  trailing: Text(_moneda.format(state.ticketPromedioHoy)),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.pending_actions_rounded),
+                  title: const Text('Pendiente por cobrar'),
+                  trailing: Text(_moneda.format(state.totalPendientePorCobrar)),
+                ),
+                if (state.ventasPorMetodo.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Métodos de pago',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: state.ventasPorMetodo.entries
+                        .map(
+                          (entry) => Chip(
+                            avatar: Icon(_iconForMetodo(entry.key), size: 16),
+                            label: Text(
+                              '${entry.key.label}: ${_moneda.format(entry.value)}',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Cerrar'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => _exportarCierreComercialPdf(state),
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        label: const Text('Exportar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────
 
   @override
@@ -84,6 +272,8 @@ class _CajaPageState extends ConsumerState<CajaPage>
     final state = ref.watch(cajaProvider);
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final esAdmin =
+        sl<AuthChangeNotifier>().usuario?.rol == RolUsuario.administrador;
 
     if (state.errorMessage != null) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -101,18 +291,55 @@ class _CajaPageState extends ConsumerState<CajaPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Caja',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Caja',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Cierre comercial y control diario de ventas',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Cierre del día',
+                      onPressed: () => _mostrarCierreComercial(state),
+                      icon: const Icon(Icons.summarize_rounded),
+                    ),
+                    if (esAdmin)
+                      IconButton(
+                        tooltip: 'Configuración Fiscal (SRI)',
+                        onPressed: () =>
+                            ConfiguracionFiscalDialog.show(context),
+                        icon: const Icon(Icons.receipt_long_rounded),
+                      ),
+                    IconButton(
+                      tooltip: 'Actualizar',
+                      onPressed: () {
+                        ref.read(cajaProvider.notifier).loadCaja();
+                        ref.read(cajaProvider.notifier).loadHistorial();
+                      },
+                      icon: const Icon(Icons.refresh_rounded),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 // Tarjetas de resumen
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final width = constraints.maxWidth;
-                    final perRow = width < 700 ? 2 : 3;
+                    final perRow = width < 700 ? 2 : 4;
                     const spacing = 8.0;
                     final cardWidth = (width - (perRow - 1) * spacing) / perRow;
                     return Wrap(
@@ -140,10 +367,18 @@ class _CajaPageState extends ConsumerState<CajaPage>
                         SizedBox(
                           width: cardWidth,
                           child: _ResumenCard(
+                            icon: Icons.trending_up_rounded,
+                            label: 'Ticket prom.',
+                            value: _moneda.format(state.ticketPromedioHoy),
+                            color: Colors.orange,
+                          ),
+                        ),
+                        SizedBox(
+                          width: cardWidth,
+                          child: _ResumenCard(
                             icon: Icons.attach_money,
                             label: 'Total hoy',
-                            value:
-                                '\$${state.totalVentasHoy.toStringAsFixed(2)}',
+                            value: _moneda.format(state.totalVentasHoy),
                             color: Colors.green,
                           ),
                         ),
@@ -366,34 +601,32 @@ class _ResumenCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+          ),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

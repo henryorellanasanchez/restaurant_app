@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:intl/intl.dart';
 import 'database_location_service.dart';
@@ -22,7 +23,6 @@ class BackupService {
   /// Crear un respaldo de la base de datos
   static Future<bool> createBackup({String? customName}) async {
     try {
-
       // Obtener la ruta actual de la base de datos
       final dbPath = await DatabaseLocationService.getDatabasePath();
 
@@ -50,7 +50,6 @@ class BackupService {
         final backupSize = await backupFile.length();
 
         if (originalSize == backupSize) {
-
           // Actualizar configuración
           await _updateLastBackupTime();
 
@@ -73,7 +72,6 @@ class BackupService {
   /// Restaurar base de datos desde un respaldo
   static Future<bool> restoreFromBackup(String backupName) async {
     try {
-
       final backupDir = await _getBackupDirectory();
       final backupPath = join(backupDir, '$backupName.db');
 
@@ -95,9 +93,7 @@ class BackupService {
 
       // Verificar la restauración
       if (await DatabaseLocationService.databaseExists(dbPath)) {
-        final restoredSize = await DatabaseLocationService.getDatabaseSize(
-          dbPath,
-        );
+        await DatabaseLocationService.getDatabaseSize(dbPath);
         return true;
       } else {
         return false;
@@ -117,12 +113,11 @@ class BackupService {
       }
 
       final directory = Directory(backupDir);
-      final files =
-          await directory
-              .list()
-              .where((entity) => entity is File && entity.path.endsWith('.db'))
-              .cast<File>()
-              .toList();
+      final files = await directory
+          .list()
+          .where((entity) => entity is File && entity.path.endsWith('.db'))
+          .cast<File>()
+          .toList();
 
       final backups = <Map<String, dynamic>>[];
 
@@ -246,6 +241,7 @@ class BackupService {
       final jsonContent = const JsonEncoder.withIndent('  ').convert(config);
       await configFile.writeAsString(jsonContent);
     } catch (e) {
+      debugPrint('No se pudo guardar la configuración de respaldos: $e');
     }
   }
 
@@ -289,16 +285,12 @@ class BackupService {
 
       if (backups.length > maxBackupFiles) {
         // Excluir respaldos de seguridad de la limpieza
-        final autoBackups =
-            backups
-                .where(
-                  (backup) => !backup['name'].toString().startsWith('safety_'),
-                )
-                .toList();
+        final autoBackups = backups
+            .where((backup) => !backup['name'].toString().startsWith('safety_'))
+            .toList();
 
         if (autoBackups.length > maxBackupFiles) {
           final backupsToDelete = autoBackups.sublist(maxBackupFiles);
-
 
           for (final backup in backupsToDelete) {
             await deleteBackup(backup['name']);
@@ -306,6 +298,7 @@ class BackupService {
         }
       }
     } catch (e) {
+      debugPrint('No se pudieron limpiar respaldos antiguos: $e');
     }
   }
 

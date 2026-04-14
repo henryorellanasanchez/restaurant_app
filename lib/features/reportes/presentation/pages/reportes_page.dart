@@ -2,12 +2,19 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
+import 'package:restaurant_app/features/reportes/domain/entities/reporte_mesero.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_metodo_pago.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_producto_vendido.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_resumen.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_venta_dia.dart';
 import 'package:restaurant_app/features/reportes/presentation/providers/reportes_provider.dart';
+import 'package:restaurant_app/services/backup_access.dart' as backup_access;
+import 'package:restaurant_app/services/report_export_access.dart'
+    as report_export_access;
 
 /// Página principal de Reportes y Analítica.
 ///
@@ -25,10 +32,335 @@ class _ReportesPageState extends ConsumerState<ReportesPage>
   late TabController _tabController;
   final _moneda = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
 
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _periodoDescripcion(FiltroFecha filtro) {
+    switch (filtro) {
+      case FiltroFecha.hoy:
+        return 'Resumen del día actual';
+      case FiltroFecha.semana:
+        return 'Acumulado de los últimos 7 días';
+      case FiltroFecha.mes:
+        return 'Acumulado de los últimos 30 días';
+      case FiltroFecha.trimestre:
+        return 'Acumulado del último trimestre';
+      case FiltroFecha.personalizado:
+        return 'Rango personalizado';
+    }
+  }
+
+  String _rangoActivoLabel(ReportesState state) {
+    final now = DateTime.now();
+    final inicio = state.fechaInicioActiva(now);
+    final fin = state.fechaFinActiva(now);
+    return '${DateFormat('dd/MM/yyyy').format(inicio)} - '
+        '${DateFormat('dd/MM/yyyy').format(fin)}';
+  }
+
+  Future<void> _exportarReportePdf(ReportesState state) async {
+    if (!mounted) return;
+
+    final resumen = state.resumen;
+    final hasData =
+        (resumen != null && resumen.tieneVentas) ||
+        state.ventasPorDia.isNotEmpty ||
+        state.topProductos.isNotEmpty;
+
+    if (!hasData) {
+      _showSnackBar('No hay datos suficientes para exportar el reporte.');
+      return;
+    }
+
+    final pdf = pw.Document();
+    final ahora = DateTime.now();
+    final generado = DateFormat('dd/MM/yyyy HH:mm').format(ahora);
+    final fileStamp = DateFormat('yyyyMMdd_HHmm').format(ahora);
+    final mejorDia = state.ventasPorDia.isEmpty
+        ? null
+        : state.ventasPorDia.reduce((a, b) => a.total >= b.total ? a : b);
+    final topProducto = state.topProductos.isEmpty
+        ? null
+        : state.topProductos.first;
+    final topMetodo = state.ventasPorMetodo.isEmpty
+        ? null
+        : state.ventasPorMetodo.reduce((a, b) => a.total >= b.total ? a : b);
+    final topMesero = state.ventasPorMesero.isEmpty
+        ? null
+        : state.ventasPorMesero.reduce((a, b) => a.total >= b.total ? a : b);
+
+    pw.Widget metric(String label, String value) {
+      return pw.Container(
+        width: 120,
+        padding: const pw.EdgeInsets.all(10),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey300),
+          borderRadius: pw.BorderRadius.circular(8),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(label, style: const pw.TextStyle(fontSize: 9)),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              value,
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        build: (_) => [
+          pw.Text(
+            'Reporte ejecutivo · La Peña',
+            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            '${_periodoDescripcion(state.filtro)} · ${_rangoActivoLabel(state)}',
+          ),
+          pw.Text('Generado: $generado'),
+          pw.SizedBox(height: 16),
+          if (resumen != null && resumen.tieneVentas)
+            pw.Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                metric('Ventas', _moneda.format(resumen.totalVentas)),
+                metric('Transacciones', '${resumen.cantidadVentas}'),
+                metric('Ticket prom.', _moneda.format(resumen.promedioTicket)),
+                metric('Máximo', _moneda.format(resumen.ticketMaximo)),
+              ],
+            ),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'Insights rápidos',
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          if (mejorDia != null)
+            pw.Bullet(
+              text:
+                  'Mejor día: ${mejorDia.fecha} · ${_moneda.format(mejorDia.total)}',
+            ),
+          if (topProducto != null)
+            pw.Bullet(
+              text:
+                  'Producto líder: ${topProducto.nombre} · ${topProducto.cantidadVendida} uds.',
+            ),
+          if (topMetodo != null)
+            pw.Bullet(
+              text:
+                  'Método dominante: ${topMetodo.metodoPago.label} · ${_moneda.format(topMetodo.total)}',
+            ),
+          if (topMesero != null)
+            pw.Bullet(
+              text:
+                  'Mejor desempeño: ${topMesero.nombre} · ${_moneda.format(topMesero.total)}',
+            ),
+          if (state.topProductos.isNotEmpty) ...[
+            pw.SizedBox(height: 18),
+            pw.Text(
+              'Top productos',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 8),
+            pw.TableHelper.fromTextArray(
+              headers: ['#', 'Producto', 'Cantidad', 'Total'],
+              data: [
+                for (final entry
+                    in state.topProductos.take(8).toList().asMap().entries)
+                  [
+                    '${entry.key + 1}',
+                    entry.value.nombre,
+                    '${entry.value.cantidadVendida}',
+                    _moneda.format(entry.value.totalIngresado),
+                  ],
+              ],
+            ),
+          ],
+          if (state.ventasPorMetodo.isNotEmpty) ...[
+            pw.SizedBox(height: 18),
+            pw.Text(
+              'Métodos de pago',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 8),
+            pw.TableHelper.fromTextArray(
+              headers: ['Método', 'Tx', 'Total'],
+              data: [
+                for (final metodo in state.ventasPorMetodo)
+                  [
+                    metodo.metodoPago.label,
+                    '${metodo.cantidad}',
+                    _moneda.format(metodo.total),
+                  ],
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+
+    try {
+      await Printing.layoutPdf(
+        onLayout: (_) async => pdf.save(),
+        name: 'reporte_${state.filtro.name}_$fileStamp.pdf',
+      );
+    } catch (_) {
+      _showSnackBar('No se pudo exportar el PDF del reporte.');
+    }
+  }
+
+  Future<void> _exportarReporteCsv(ReportesState state) async {
+    final resumen = state.resumen;
+    final hasData =
+        (resumen != null && resumen.tieneVentas) ||
+        state.ventasPorDia.isNotEmpty ||
+        state.topProductos.isNotEmpty;
+
+    if (!hasData) {
+      _showSnackBar('No hay datos suficientes para exportar el CSV.');
+      return;
+    }
+
+    String esc(Object? value) {
+      final text = (value ?? '').toString().replaceAll('"', '""');
+      return '"$text"';
+    }
+
+    final ahora = DateTime.now();
+    final fileStamp = DateFormat('yyyyMMdd_HHmm').format(ahora);
+    final csv = StringBuffer()
+      ..writeln(esc('La Peña - Reporte ejecutivo'))
+      ..writeln('${esc('Período')};${esc(_periodoDescripcion(state.filtro))}')
+      ..writeln('${esc('Rango')};${esc(_rangoActivoLabel(state))}')
+      ..writeln(
+        '${esc('Generado')};${esc(DateFormat('dd/MM/yyyy HH:mm').format(ahora))}',
+      )
+      ..writeln();
+
+    if (resumen != null && resumen.tieneVentas) {
+      csv
+        ..writeln('${esc('Resumen')};${esc('Valor')}')
+        ..writeln(
+          '${esc('Total ventas')};${esc(resumen.totalVentas.toStringAsFixed(2))}',
+        )
+        ..writeln('${esc('Transacciones')};${esc(resumen.cantidadVentas)}')
+        ..writeln(
+          '${esc('Ticket promedio')};${esc(resumen.promedioTicket.toStringAsFixed(2))}',
+        )
+        ..writeln(
+          '${esc('Ticket máximo')};${esc(resumen.ticketMaximo.toStringAsFixed(2))}',
+        )
+        ..writeln(
+          '${esc('Ticket mínimo')};${esc(resumen.ticketMinimo.toStringAsFixed(2))}',
+        )
+        ..writeln();
+    }
+
+    if (state.ventasPorDia.isNotEmpty) {
+      csv
+        ..writeln(esc('Ventas por día'))
+        ..writeln('${esc('Fecha')};${esc('Total')};${esc('Ventas')}');
+      for (final item in state.ventasPorDia) {
+        csv.writeln(
+          '${esc(item.fecha)};${esc(item.total.toStringAsFixed(2))};${esc(item.cantidadVentas)}',
+        );
+      }
+      csv.writeln();
+    }
+
+    if (state.topProductos.isNotEmpty) {
+      csv
+        ..writeln(esc('Productos'))
+        ..writeln(
+          '${esc('Producto')};${esc('Categoría')};${esc('Cantidad')};${esc('Total')}',
+        );
+      for (final item in state.topProductos) {
+        csv.writeln(
+          '${esc(item.nombre)};${esc(item.categoriaNombre ?? 'Sin categoría')};${esc(item.cantidadVendida)};${esc(item.totalIngresado.toStringAsFixed(2))}',
+        );
+      }
+      csv.writeln();
+    }
+
+    if (state.ventasPorMetodo.isNotEmpty) {
+      csv
+        ..writeln(esc('Métodos de pago'))
+        ..writeln(
+          '${esc('Método')};${esc('Transacciones')};${esc('Total')};${esc('Porcentaje')}',
+        );
+      for (final item in state.ventasPorMetodo) {
+        csv.writeln(
+          '${esc(item.metodoPago.label)};${esc(item.cantidad)};${esc(item.total.toStringAsFixed(2))};${esc(item.porcentaje.toStringAsFixed(2))}',
+        );
+      }
+      csv.writeln();
+    }
+
+    if (state.ventasPorMesero.isNotEmpty) {
+      csv
+        ..writeln(esc('Meseros'))
+        ..writeln('${esc('Nombre')};${esc('Pedidos')};${esc('Total')}');
+      for (final item in state.ventasPorMesero) {
+        csv.writeln(
+          '${esc(item.nombre)};${esc(item.cantidadPedidos)};${esc(item.total.toStringAsFixed(2))}',
+        );
+      }
+    }
+
+    final result = await report_export_access.exportCsvReport(
+      fileName: 'reporte_${state.filtro.name}_$fileStamp.csv',
+      csvContent: csv.toString(),
+    );
+
+    if (result['cancelled'] == true) return;
+
+    _showSnackBar(
+      result['message']?.toString() ?? 'No se pudo exportar el reporte CSV.',
+    );
+  }
+
+  Future<void> _seleccionarRangoPersonalizado(ReportesState state) async {
+    final now = DateTime.now();
+    final initialStart = state.fechaInicioActiva(now);
+    final initialEnd = state.fechaFinActiva(now);
+
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      initialDateRange: DateTimeRange(start: initialStart, end: initialEnd),
+      helpText: 'Selecciona el rango del reporte',
+      confirmText: 'Aplicar',
+      cancelText: 'Cancelar',
+      locale: const Locale('es', 'ES'),
+    );
+
+    if (range == null || !mounted) return;
+
+    await ref
+        .read(reportesProvider.notifier)
+        .cambiarRangoPersonalizado(range.start, range.end);
+  }
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -49,15 +381,24 @@ class _ReportesPageState extends ConsumerState<ReportesPage>
           _Header(
             filtro: state.filtro,
             isLoading: state.isLoading,
+            rangoActivoLabel: _rangoActivoLabel(state),
             onFiltroChanged: (f) =>
                 ref.read(reportesProvider.notifier).cambiarFiltro(f),
             onRefresh: () =>
                 ref.read(reportesProvider.notifier).cargarReportes(),
+            onSelectCustomRange: () => _seleccionarRangoPersonalizado(state),
+            onExportPdf: state.isLoading
+                ? null
+                : () => _exportarReportePdf(state),
+            onExportCsv: state.isLoading
+                ? null
+                : () => _exportarReporteCsv(state),
           ),
           ColoredBox(
             color: colors.surface,
             child: TabBar(
               controller: _tabController,
+              isScrollable: true,
               tabs: const [
                 Tab(icon: Icon(Icons.dashboard_rounded), text: 'Resumen'),
                 Tab(icon: Icon(Icons.bar_chart_rounded), text: 'Ventas'),
@@ -66,6 +407,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage>
                   text: 'Productos',
                 ),
                 Tab(icon: Icon(Icons.credit_card_rounded), text: 'Métodos'),
+                Tab(icon: Icon(Icons.backup_rounded), text: 'Respaldos'),
               ],
             ),
           ),
@@ -81,7 +423,15 @@ class _ReportesPageState extends ConsumerState<ReportesPage>
                 : TabBarView(
                     controller: _tabController,
                     children: [
-                      _TabResumen(resumen: state.resumen, moneda: _moneda),
+                      _TabResumen(
+                        resumen: state.resumen,
+                        ventasPorDia: state.ventasPorDia,
+                        productos: state.topProductos,
+                        metodos: state.ventasPorMetodo,
+                        meseros: state.ventasPorMesero,
+                        filtro: state.filtro,
+                        moneda: _moneda,
+                      ),
                       _TabVentas(
                         ventasPorDia: state.ventasPorDia,
                         moneda: _moneda,
@@ -95,6 +445,7 @@ class _ReportesPageState extends ConsumerState<ReportesPage>
                         meseros: state.ventasPorMesero,
                         moneda: _moneda,
                       ),
+                      _TabRespaldos(onShowMessage: _showSnackBar),
                     ],
                   ),
           ),
@@ -110,14 +461,22 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.filtro,
     required this.isLoading,
+    required this.rangoActivoLabel,
     required this.onFiltroChanged,
     required this.onRefresh,
+    required this.onSelectCustomRange,
+    this.onExportPdf,
+    this.onExportCsv,
   });
 
   final FiltroFecha filtro;
   final bool isLoading;
+  final String rangoActivoLabel;
   final ValueChanged<FiltroFecha> onFiltroChanged;
   final VoidCallback onRefresh;
+  final VoidCallback onSelectCustomRange;
+  final VoidCallback? onExportPdf;
+  final VoidCallback? onExportCsv;
 
   @override
   Widget build(BuildContext context) {
@@ -125,40 +484,98 @@ class _Header extends StatelessWidget {
 
     return Container(
       color: colors.surface,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.analytics_rounded, size: 24),
-          const SizedBox(width: 10),
-          Text(
-            'Reportes',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const Spacer(),
-          ...FiltroFecha.values.map(
-            (f) => Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: ChoiceChip(
-                label: Text(f.label),
-                selected: filtro == f,
-                onSelected: (_) => onFiltroChanged(f),
-                visualDensity: VisualDensity.compact,
+          Row(
+            children: [
+              const Icon(Icons.analytics_rounded, size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Reportes',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Vista ejecutiva de ventas, productos, métodos y respaldos',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+              PopupMenuButton<String>(
+                tooltip: 'Exportar reporte',
+                enabled: !isLoading,
+                onSelected: (value) {
+                  if (value == 'pdf') {
+                    onExportPdf?.call();
+                  } else if (value == 'csv') {
+                    onExportCsv?.call();
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(
+                    value: 'pdf',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.picture_as_pdf_outlined),
+                      title: Text('Exportar PDF'),
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'csv',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.table_view_rounded),
+                      title: Text('Exportar CSV'),
+                    ),
+                  ),
+                ],
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.ios_share_rounded),
+                ),
+              ),
+              IconButton(
+                icon: isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                tooltip: 'Actualizar',
+                onPressed: isLoading ? null : onRefresh,
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_rounded),
-            tooltip: 'Actualizar',
-            onPressed: isLoading ? null : onRefresh,
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ...FiltroFecha.values.map(
+                (f) => ChoiceChip(
+                  label: Text(f.label),
+                  selected: filtro == f,
+                  onSelected: (_) => onFiltroChanged(f),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.calendar_month_rounded, size: 18),
+                label: Text(rangoActivoLabel),
+                onPressed: onSelectCustomRange,
+              ),
+            ],
           ),
         ],
       ),
@@ -198,9 +615,22 @@ class _ErrorView extends StatelessWidget {
 // ── Tab Resumen ────────────────────────────────────────────────────────────────
 
 class _TabResumen extends StatelessWidget {
-  const _TabResumen({required this.resumen, required this.moneda});
+  const _TabResumen({
+    required this.resumen,
+    required this.ventasPorDia,
+    required this.productos,
+    required this.metodos,
+    required this.meseros,
+    required this.filtro,
+    required this.moneda,
+  });
 
   final ResumenVentas? resumen;
+  final List<VentaPorDia> ventasPorDia;
+  final List<ProductoVendido> productos;
+  final List<VentaPorMetodo> metodos;
+  final List<VentaPorMesero> meseros;
+  final FiltroFecha filtro;
   final NumberFormat moneda;
 
   @override
@@ -212,9 +642,173 @@ class _TabResumen extends StatelessWidget {
     }
 
     final r = resumen!;
+    final mejorDia = ventasPorDia.isEmpty
+        ? null
+        : ventasPorDia.reduce((a, b) => a.total >= b.total ? a : b);
+    final topProducto = productos.isEmpty ? null : productos.first;
+    final topMetodo = metodos.isEmpty
+        ? null
+        : metodos.reduce((a, b) => a.total >= b.total ? a : b);
+    final topMesero = meseros.isEmpty
+        ? null
+        : meseros.reduce((a, b) => a.total >= b.total ? a : b);
+    final diasConVentas = ventasPorDia.isEmpty ? 1 : ventasPorDia.length;
+    final promedioDiario = r.totalVentas / diasConVentas;
+    final totalUnidades = productos.fold<int>(
+      0,
+      (sum, item) => sum + item.cantidadVendida,
+    );
+    final participacionTopProducto = topProducto == null || totalUnidades == 0
+        ? 0.0
+        : (topProducto.cantidadVendida / totalUnidades) * 100;
+    final participacionTopMetodo = topMetodo == null
+        ? 0.0
+        : topMetodo.porcentaje;
+    final rangoLabel =
+        '${DateFormat('dd/MM').format(r.fechaInicio)} - ${DateFormat('dd/MM').format(r.fechaFin)}';
+
+    String saludLabel;
+    Color saludColor;
+    String saludDetalle;
+
+    if (r.totalVentas >= 1500 || r.promedioTicket >= 28) {
+      saludLabel = 'Excelente ritmo';
+      saludColor = Colors.green;
+      saludDetalle = 'Buen volumen y ticket promedio saludable.';
+    } else if (r.totalVentas >= 700 || r.promedioTicket >= 18) {
+      saludLabel = 'Buen desempeño';
+      saludColor = Colors.orange;
+      saludDetalle = 'Hay movimiento sólido con margen para subir el ticket.';
+    } else {
+      saludLabel = 'Atención comercial';
+      saludColor = Colors.redAccent;
+      saludDetalle = 'Conviene empujar combos y ventas sugeridas.';
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Card(
+          elevation: 0,
+          color: saludColor.withValues(alpha: 0.08),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: saludColor.withValues(alpha: 0.16),
+                      child: Icon(Icons.insights_rounded, color: saludColor),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Resumen ejecutivo del período',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            '$saludLabel · $saludDetalle',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.date_range_rounded, size: 18),
+                      label: Text(rangoLabel),
+                    ),
+                    Chip(
+                      avatar: const Icon(
+                        Icons.calendar_view_week_rounded,
+                        size: 18,
+                      ),
+                      label: Text('$diasConVentas día(s) con ventas'),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.speed_rounded, size: 18),
+                      label: Text(
+                        'Promedio diario ${moneda.format(promedioDiario)}',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InsightTile(
+                  title: 'Período',
+                  value: filtro.label,
+                  subtitle: 'Rango activo del reporte',
+                  icon: Icons.date_range_rounded,
+                  color: Colors.indigo,
+                ),
+                _InsightTile(
+                  title: 'Ritmo diario',
+                  value: moneda.format(promedioDiario),
+                  subtitle: 'Promedio por día con ventas',
+                  icon: Icons.timeline_rounded,
+                  color: Colors.cyan,
+                ),
+                if (mejorDia != null)
+                  _InsightTile(
+                    title: 'Mejor día',
+                    value: moneda.format(mejorDia.total),
+                    subtitle: mejorDia.fecha,
+                    icon: Icons.calendar_month_rounded,
+                    color: Colors.teal,
+                  ),
+                if (topProducto != null)
+                  _InsightTile(
+                    title: 'Top producto',
+                    value: '${topProducto.cantidadVendida} uds.',
+                    subtitle: topProducto.nombre,
+                    icon: Icons.local_fire_department_rounded,
+                    color: Colors.deepOrange,
+                  ),
+                if (topMetodo != null)
+                  _InsightTile(
+                    title: 'Pago dominante',
+                    value: '${participacionTopMetodo.toStringAsFixed(0)}%',
+                    subtitle: topMetodo.metodoPago.label,
+                    icon: Icons.payments_rounded,
+                    color: Colors.green,
+                  ),
+                if (topMesero != null)
+                  _InsightTile(
+                    title: 'Mejor desempeño',
+                    value: topMesero.nombre,
+                    subtitle: moneda.format(topMesero.total),
+                    icon: Icons.workspace_premium_rounded,
+                    color: Colors.purple,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
@@ -223,7 +817,7 @@ class _TabResumen extends StatelessWidget {
                 : width < 900
                 ? 300.0
                 : 360.0;
-            final aspect = width < 520 ? 1.7 : 2.2;
+            final aspect = width < 520 ? 1.35 : 2.0;
             return GridView.builder(
               gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: maxExtent,
@@ -267,16 +861,50 @@ class _TabResumen extends StatelessWidget {
           },
         ),
         const SizedBox(height: 16),
+        const _SectionHeader(
+          title: 'Radar de decisiones',
+          subtitle: 'Señales rápidas para saber qué reforzar o mantener.',
+        ),
         Card(
-          child: ListTile(
-            leading: const Icon(
-              Icons.trending_down_rounded,
-              color: Colors.teal,
-            ),
-            title: const Text('Ticket mínimo'),
-            trailing: Text(
-              moneda.format(r.ticketMinimo),
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                _RecommendationTile(
+                  icon: Icons.favorite_rounded,
+                  color: saludColor,
+                  title: saludLabel,
+                  subtitle: saludDetalle,
+                ),
+                _RecommendationTile(
+                  icon: Icons.restaurant_menu_rounded,
+                  color: Colors.deepOrange,
+                  title: topProducto == null
+                      ? 'Menú sin líder claro'
+                      : '${topProducto.nombre} lidera el período',
+                  subtitle: topProducto == null
+                      ? 'Todavía no hay suficiente movimiento para detectar un producto estrella.'
+                      : 'Aporta ${participacionTopProducto.toStringAsFixed(0)}% de las unidades registradas.',
+                ),
+                _RecommendationTile(
+                  icon: Icons.account_balance_wallet_rounded,
+                  color: Colors.green,
+                  title: topMetodo == null
+                      ? 'Sin método dominante'
+                      : '${topMetodo.metodoPago.label} concentra el cobro',
+                  subtitle: topMetodo == null
+                      ? 'Aún no hay reparto por métodos de pago.'
+                      : 'Representa ${participacionTopMetodo.toStringAsFixed(1)}% del total cobrado.',
+                ),
+                _RecommendationTile(
+                  icon: Icons.trending_down_rounded,
+                  color: Colors.teal,
+                  title: 'Ticket mínimo: ${moneda.format(r.ticketMinimo)}',
+                  subtitle:
+                      'Úsalo como referencia para detectar ventas demasiado pequeñas y ofrecer adicionales.',
+                  isLast: true,
+                ),
+              ],
             ),
           ),
         ),
@@ -305,128 +933,284 @@ class _TabVentas extends StatelessWidget {
         .map((v) => v.total)
         .reduce((a, b) => a > b ? a : b);
     final colors = Theme.of(context).colorScheme;
+    final mejorDia = ventasPorDia.reduce((a, b) => a.total >= b.total ? a : b);
+    final diaMasBajo = ventasPorDia.reduce(
+      (a, b) => a.total <= b.total ? a : b,
+    );
+    final totalPeriodo = ventasPorDia.fold<double>(
+      0,
+      (sum, item) => sum + item.total,
+    );
+    final totalVentas = ventasPorDia.fold<int>(
+      0,
+      (sum, item) => sum + item.cantidadVentas,
+    );
+    final promedioDiario = totalPeriodo / ventasPorDia.length;
+    final ticketPromedio = totalVentas == 0 ? 0.0 : totalPeriodo / totalVentas;
+    final primero = ventasPorDia.first.total;
+    final ultimo = ventasPorDia.last.total;
+    final variacion = primero == 0 ? 0.0 : ((ultimo - primero) / primero) * 100;
 
-    return ListView(
+    final ventasReversed = ventasPorDia.reversed.toList();
+    // 9 items estáticos antes de la lista dinámica de días.
+    const staticCount = 9;
+
+    return ListView.builder(
       padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Ventas por día',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 20, 12, 8),
-            child: SizedBox(
-              height: 220,
-              child: BarChart(
-                BarChartData(
-                  maxY: maxVal * 1.2,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: maxVal > 0 ? maxVal / 4 : 1,
-                    getDrawingHorizontalLine: (v) =>
-                        FlLine(color: colors.outlineVariant, strokeWidth: 1),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 56,
-                        getTitlesWidget: (value, meta) {
-                          if (value == 0) return const SizedBox.shrink();
-                          return Text(
-                            '\$${_compactVal(value)}',
-                            style: const TextStyle(fontSize: 10),
-                          );
-                        },
+      itemCount: staticCount + ventasReversed.length,
+      itemBuilder: (context, index) {
+        switch (index) {
+          case 0:
+            return const _SectionHeader(
+              title: 'Comportamiento de ventas',
+              subtitle:
+                  'Detecta días fuertes, valles y ritmo comercial del período.',
+            );
+          case 1:
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InsightTile(
+                  title: 'Total del período',
+                  value: moneda.format(totalPeriodo),
+                  subtitle: '${ventasPorDia.length} día(s) analizados',
+                  icon: Icons.ssid_chart_rounded,
+                  color: Colors.green,
+                ),
+                _InsightTile(
+                  title: 'Promedio diario',
+                  value: moneda.format(promedioDiario),
+                  subtitle: 'Volumen diario esperado',
+                  icon: Icons.timeline_rounded,
+                  color: Colors.blue,
+                ),
+                _InsightTile(
+                  title: 'Mejor día',
+                  value: moneda.format(mejorDia.total),
+                  subtitle: mejorDia.fecha,
+                  icon: Icons.arrow_upward_rounded,
+                  color: Colors.teal,
+                ),
+                _InsightTile(
+                  title: 'Variación',
+                  value:
+                      '${variacion >= 0 ? '+' : ''}${variacion.toStringAsFixed(1)}%',
+                  subtitle: 'Último vs. primer día',
+                  icon: variacion >= 0
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
+                  color: variacion >= 0 ? Colors.green : Colors.deepOrange,
+                ),
+              ],
+            );
+          case 2:
+            return const SizedBox(height: 12);
+          case 3:
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ventas por día',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 28,
-                        getTitlesWidget: (value, meta) {
-                          final idx = value.toInt();
-                          if (idx < 0 || idx >= ventasPorDia.length) {
-                            return const SizedBox.shrink();
-                          }
-                          final parts = ventasPorDia[idx].fecha.split('-');
-                          final label = parts.length == 3
-                              ? '${parts[2]}/${parts[1]}'
-                              : ventasPorDia[idx].fecha;
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              label,
-                              style: const TextStyle(fontSize: 10),
+                    const SizedBox(height: 4),
+                    Text(
+                      'El gráfico ayuda a detectar picos y días con menor movimiento.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 220,
+                      child: BarChart(
+                        BarChartData(
+                          maxY: maxVal * 1.2,
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: maxVal > 0 ? maxVal / 4 : 1,
+                            getDrawingHorizontalLine: (v) => FlLine(
+                              color: colors.outlineVariant,
+                              strokeWidth: 1,
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  barGroups: List.generate(ventasPorDia.length, (i) {
-                    return BarChartGroupData(
-                      x: i,
-                      barRods: [
-                        BarChartRodData(
-                          toY: ventasPorDia[i].total,
-                          color: colors.primary,
-                          width: ventasPorDia.length > 20 ? 6 : 14,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(4),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          titlesData: FlTitlesData(
+                            topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 56,
+                                getTitlesWidget: (value, meta) {
+                                  if (value == 0) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Text(
+                                    '\$${_compactVal(value)}',
+                                    style: const TextStyle(fontSize: 10),
+                                  );
+                                },
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 28,
+                                getTitlesWidget: (value, meta) {
+                                  final idx = value.toInt();
+                                  if (idx < 0 || idx >= ventasPorDia.length) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  final parts = ventasPorDia[idx].fecha.split(
+                                    '-',
+                                  );
+                                  final label = parts.length == 3
+                                      ? '${parts[2]}/${parts[1]}'
+                                      : ventasPorDia[idx].fecha;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      label,
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          barGroups: List.generate(ventasPorDia.length, (i) {
+                            final venta = ventasPorDia[i];
+                            final isPeak = venta.fecha == mejorDia.fecha;
+                            return BarChartGroupData(
+                              x: i,
+                              barRods: [
+                                BarChartRodData(
+                                  toY: venta.total,
+                                  color: isPeak
+                                      ? colors.tertiary
+                                      : colors.primary,
+                                  width: ventasPorDia.length > 20 ? 6 : 14,
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }),
+                          barTouchData: BarTouchData(
+                            touchTooltipData: BarTouchTooltipData(
+                              getTooltipItem:
+                                  (group, groupIndex, rod, rodIndex) {
+                                    final v = ventasPorDia[group.x];
+                                    return BarTooltipItem(
+                                      '${v.fecha}\n${moneda.format(rod.toY)}\n'
+                                      '${v.cantidadVentas} venta(s)',
+                                      const TextStyle(fontSize: 12),
+                                    );
+                                  },
+                            ),
                           ),
                         ),
-                      ],
-                    );
-                  }),
-                  barTouchData: BarTouchData(
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final v = ventasPorDia[group.x];
-                        return BarTooltipItem(
-                          '${v.fecha}\n${moneda.format(rod.toY)}\n'
-                          '${v.cantidadVentas} venta(s)',
-                          const TextStyle(fontSize: 12),
-                        );
-                      },
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text('Detalle diario', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 8),
-        ...ventasPorDia.reversed.map(
-          (v) => ListTile(
-            dense: true,
-            leading: const Icon(Icons.calendar_today_rounded, size: 18),
-            title: Text(v.fecha),
-            subtitle: Text('${v.cantidadVentas} venta(s)'),
-            trailing: Text(
-              moneda.format(v.total),
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: colors.primary,
+            );
+          case 4:
+            return const SizedBox(height: 12);
+          case 5:
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    _RecommendationTile(
+                      icon: Icons.workspace_premium_rounded,
+                      color: Colors.teal,
+                      title: 'Mejor jornada: ${mejorDia.fecha}',
+                      subtitle:
+                          '${moneda.format(mejorDia.total)} en ${mejorDia.cantidadVentas} venta(s).',
+                    ),
+                    _RecommendationTile(
+                      icon: Icons.trending_down_rounded,
+                      color: Colors.deepOrange,
+                      title: 'Día más bajo: ${diaMasBajo.fecha}',
+                      subtitle:
+                          'Úsalo para revisar promociones o turnos flojos (${moneda.format(diaMasBajo.total)}).',
+                    ),
+                    _RecommendationTile(
+                      icon: Icons.receipt_rounded,
+                      color: Colors.indigo,
+                      title: 'Ticket operativo promedio',
+                      subtitle:
+                          '${moneda.format(ticketPromedio)} por transacción en este período.',
+                      isLast: true,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-        ),
-      ],
+            );
+          case 6:
+            return const SizedBox(height: 16);
+          case 7:
+            return Text(
+              'Detalle diario',
+              style: Theme.of(context).textTheme.titleSmall,
+            );
+          case 8:
+            return const SizedBox(height: 8);
+          default:
+            final v = ventasReversed[index - staticCount];
+            final esPico = v.fecha == mejorDia.fecha;
+            final esBajo = v.fecha == diaMasBajo.fecha;
+            return ListTile(
+              dense: true,
+              leading: CircleAvatar(
+                radius: 14,
+                backgroundColor: esPico
+                    ? Colors.teal.withValues(alpha: 0.16)
+                    : esBajo
+                    ? Colors.deepOrange.withValues(alpha: 0.14)
+                    : colors.surfaceContainerHigh,
+                child: Icon(
+                  esPico
+                      ? Icons.arrow_upward_rounded
+                      : esBajo
+                      ? Icons.arrow_downward_rounded
+                      : Icons.calendar_today_rounded,
+                  size: 14,
+                  color: esPico
+                      ? Colors.teal
+                      : esBajo
+                      ? Colors.deepOrange
+                      : colors.onSurfaceVariant,
+                ),
+              ),
+              title: Text(v.fecha),
+              subtitle: Text('${v.cantidadVentas} venta(s)'),
+              trailing: Text(
+                moneda.format(v.total),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: colors.primary,
+                ),
+              ),
+            );
+        }
+      },
     );
   }
 
@@ -452,101 +1236,225 @@ class _TabProductos extends StatelessWidget {
 
     final maxCantidad = productos.first.cantidadVendida.toDouble();
     final colors = Theme.of(context).colorScheme;
+    final totalUnidades = productos.fold<int>(
+      0,
+      (sum, item) => sum + item.cantidadVendida,
+    );
+    final totalIngresos = productos.fold<double>(
+      0,
+      (sum, item) => sum + item.totalIngresado,
+    );
+    final topProducto = productos.first;
+    final top3Unidades = productos
+        .take(3)
+        .fold<int>(0, (sum, item) => sum + item.cantidadVendida);
+    final concentracionTop3 = totalUnidades == 0
+        ? 0.0
+        : (top3Unidades / totalUnidades) * 100;
 
-    return ListView(
+    // 7 items estáticos antes de la lista dinámica de productos.
+    const staticCount = 7;
+
+    return ListView.builder(
       padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          'Top ${productos.length} productos más vendidos',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        ...List.generate(productos.length, (i) {
-          final p = productos[i];
-          final pct = maxCantidad > 0 ? p.cantidadVendida / maxCantidad : 0.0;
+      itemCount: staticCount + productos.length,
+      itemBuilder: (context, index) {
+        switch (index) {
+          case 0:
+            return const _SectionHeader(
+              title: 'Mix del menú',
+              subtitle:
+                  'Identifica productos líderes y detecta dependencia de pocos platos.',
+            );
+          case 1:
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InsightTile(
+                  title: 'Productos analizados',
+                  value: '${productos.length}',
+                  subtitle: 'Top del período',
+                  icon: Icons.inventory_2_rounded,
+                  color: Colors.indigo,
+                ),
+                _InsightTile(
+                  title: 'Unidades',
+                  value: '$totalUnidades',
+                  subtitle: 'Vendidas en el top actual',
+                  icon: Icons.sell_rounded,
+                  color: Colors.teal,
+                ),
+                _InsightTile(
+                  title: 'Ingresos top',
+                  value: moneda.format(totalIngresos),
+                  subtitle: 'Aporte del top mostrado',
+                  icon: Icons.attach_money_rounded,
+                  color: Colors.green,
+                ),
+                _InsightTile(
+                  title: 'Concentración top 3',
+                  value: '${concentracionTop3.toStringAsFixed(0)}%',
+                  subtitle: 'Participación en unidades',
+                  icon: Icons.pie_chart_rounded,
+                  color: Colors.deepOrange,
+                ),
+              ],
+            );
+          case 2:
+            return const SizedBox(height: 12);
+          case 3:
+            return Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Producto líder del período',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _ShareBarTile(
+                      label: topProducto.nombre,
+                      percentage: totalUnidades == 0
+                          ? 0
+                          : (topProducto.cantidadVendida / totalUnidades) * 100,
+                      value: '${topProducto.cantidadVendida} uds.',
+                      subtitle: moneda.format(topProducto.totalIngresado),
+                      color: Colors.deepOrange,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          case 4:
+            return const SizedBox(height: 16);
+          case 5:
+            return Text(
+              'Top ${productos.length} productos más vendidos',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            );
+          case 6:
+            return const SizedBox(height: 12);
+          default:
+            final i = index - staticCount;
+            final p = productos[i];
+            final pct = maxCantidad > 0 ? p.cantidadVendida / maxCantidad : 0.0;
+            final share = totalUnidades == 0
+                ? 0.0
+                : (p.cantidadVendida / totalUnidades) * 100;
+            final ingresoPromedio = p.cantidadVendida == 0
+                ? 0.0
+                : p.totalIngresado / p.cantidadVendida;
 
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: colors.primaryContainer,
-                        child: Text(
-                          '${i + 1}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: colors.onPrimaryContainer,
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: colors.primaryContainer,
+                          child: Text(
+                            '${i + 1}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: colors.onPrimaryContainer,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p.nombre,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (p.categoriaNombre != null)
+                                Text(
+                                  p.categoriaNombre!,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colors.outline,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              p.nombre,
+                              '${p.cantidadVendida} uds.',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            if (p.categoriaNombre != null)
-                              Text(
-                                p.categoriaNombre!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: colors.outline,
-                                ),
+                            Text(
+                              moneda.format(p.totalIngresado),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colors.primary,
                               ),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${p.cantidadVendida} uds.',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: pct,
+                            borderRadius: BorderRadius.circular(4),
+                            backgroundColor: colors.surfaceContainerHigh,
+                            color: i == 0
+                                ? colors.primary
+                                : i == 1
+                                ? colors.secondary
+                                : colors.tertiary,
+                            minHeight: 6,
                           ),
-                          Text(
-                            moneda.format(p.totalIngresado),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.primary,
-                            ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '${share.toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: colors.onSurfaceVariant,
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Ingreso promedio por unidad: ${moneda.format(ingresoPromedio)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: pct,
-                    borderRadius: BorderRadius.circular(4),
-                    backgroundColor: colors.surfaceContainerHigh,
-                    color: i == 0
-                        ? colors.primary
-                        : i == 1
-                        ? colors.secondary
-                        : colors.tertiary,
-                    minHeight: 6,
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        }),
-      ],
+            );
+        }
+      },
     );
   }
 }
@@ -561,7 +1469,7 @@ class _TabMetodos extends StatefulWidget {
   });
 
   final List<VentaPorMetodo> metodos;
-  final List<dynamic> meseros;
+  final List<VentaPorMesero> meseros;
   final NumberFormat moneda;
 
   @override
@@ -586,15 +1494,48 @@ class _TabMetodosState extends State<_TabMetodos> {
       colors.tertiary,
       colors.error,
     ];
+    final dominante = widget.metodos.reduce(
+      (a, b) => a.total >= b.total ? a : b,
+    );
+    final topMesero = widget.meseros.isEmpty
+        ? null
+        : widget.meseros.reduce((a, b) => a.total >= b.total ? a : b);
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
-          'Ventas por método de pago',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        const _SectionHeader(
+          title: 'Cobros y equipo',
+          subtitle:
+              'Revisa cómo pagan los clientes y quién lidera el desempeño.',
+        ),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            _InsightTile(
+              title: 'Método dominante',
+              value: _labelMetodo(dominante.metodoPago),
+              subtitle: '${dominante.porcentaje.toStringAsFixed(1)}% del total',
+              icon: Icons.account_balance_wallet_rounded,
+              color: Colors.green,
+            ),
+            _InsightTile(
+              title: 'Métodos activos',
+              value: '${widget.metodos.length}',
+              subtitle: 'Canales de cobro usados',
+              icon: Icons.credit_card_rounded,
+              color: Colors.indigo,
+            ),
+            if (topMesero != null)
+              _InsightTile(
+                title: 'Mejor mesero',
+                value: topMesero.nombre,
+                subtitle: widget.moneda.format(topMesero.total),
+                icon: Icons.emoji_events_rounded,
+                color: Colors.purple,
+              ),
+          ],
         ),
         const SizedBox(height: 12),
         Card(
@@ -609,6 +1550,8 @@ class _TabMetodosState extends State<_TabMetodos> {
                     PieChartData(
                       pieTouchData: PieTouchData(
                         touchCallback: (event, response) {
+                          if (!mounted) return;
+
                           setState(() {
                             if (!event.isInterestedForInteractions ||
                                 response == null ||
@@ -692,6 +1635,38 @@ class _TabMetodosState extends State<_TabMetodos> {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Distribución de cobros',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                ...widget.metodos.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final metodo = entry.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _ShareBarTile(
+                      label: _labelMetodo(metodo.metodoPago),
+                      percentage: metodo.porcentaje,
+                      value: widget.moneda.format(metodo.total),
+                      subtitle: '${metodo.cantidad} transacción(es)',
+                      color: metodoColors[i % metodoColors.length],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
         if (widget.meseros.isNotEmpty) ...[
           const SizedBox(height: 16),
           Text(
@@ -719,10 +1694,10 @@ class _TabMetodosState extends State<_TabMetodos> {
                   ),
                 ),
               ),
-              title: Text(m.nombre as String),
+              title: Text(m.nombre),
               subtitle: Text('${m.cantidadPedidos} pedido(s)'),
               trailing: Text(
-                widget.moneda.format(m.total as double),
+                widget.moneda.format(m.total),
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: colors.primary,
@@ -747,7 +1722,579 @@ class _TabMetodosState extends State<_TabMetodos> {
   }
 }
 
+class _TabRespaldos extends StatefulWidget {
+  const _TabRespaldos({required this.onShowMessage});
+
+  final ValueChanged<String> onShowMessage;
+
+  @override
+  State<_TabRespaldos> createState() => _TabRespaldosState();
+}
+
+class _TabRespaldosState extends State<_TabRespaldos> {
+  late Future<Map<String, dynamic>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = backup_access.getBackupOverview();
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      _future = backup_access.getBackupOverview();
+    });
+  }
+
+  Future<void> _crearRespaldo() async {
+    final ok = await backup_access.createManualBackup();
+    widget.onShowMessage(
+      ok ? 'Respaldo creado correctamente.' : 'No se pudo crear el respaldo.',
+    );
+    await _reload();
+  }
+
+  Future<void> _importarArchivo() async {
+    final result = await backup_access.importBackupFile();
+    if (result['cancelled'] == true) return;
+
+    widget.onShowMessage(
+      result['message']?.toString() ??
+          'No se pudo importar el archivo de respaldo.',
+    );
+
+    await _reload();
+  }
+
+  Future<void> _exportarRespaldo(String backupName) async {
+    final result = await backup_access.exportBackup(backupName);
+    if (result['cancelled'] == true) return;
+
+    widget.onShowMessage(
+      result['message']?.toString() ?? 'No se pudo exportar el respaldo.',
+    );
+  }
+
+  Future<void> _restaurar(Map<String, dynamic> backup) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restaurar respaldo'),
+        content: Text(
+          'Se reemplazará la base actual por "${backup['name']}". Antes se creará una copia de seguridad automática.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Restaurar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+
+    final ok = await backup_access.restoreBackup(backup['name'].toString());
+    widget.onShowMessage(
+      ok
+          ? 'Respaldo restaurado. Actualiza las pantallas o reinicia la app para ver los cambios.'
+          : 'No se pudo restaurar el respaldo.',
+    );
+    await _reload();
+  }
+
+  Future<void> _eliminar(Map<String, dynamic> backup) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar respaldo'),
+        content: Text('Se eliminará "${backup['name']}" de forma permanente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+
+    final ok = await backup_access.deleteBackup(backup['name'].toString());
+    widget.onShowMessage(
+      ok ? 'Respaldo eliminado.' : 'No se pudo eliminar el respaldo.',
+    );
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return const _EmptyState(
+            mensaje: 'No se pudieron cargar los respaldos.',
+          );
+        }
+
+        final data = snapshot.data ?? const <String, dynamic>{};
+        final supported = data['supported'] == true;
+
+        if (!supported) {
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.backup_outlined),
+                          SizedBox(width: 8),
+                          Text(
+                            'Respaldos',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        data['message']?.toString() ??
+                            'Esta función no está disponible en esta plataforma.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final stats = Map<String, dynamic>.from(
+          data['stats'] as Map? ?? const <String, dynamic>{},
+        );
+        final backups = (data['backups'] as List? ?? const [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        final dbInfo = Map<String, dynamic>.from(
+          data['dbInfo'] as Map? ?? const <String, dynamic>{},
+        );
+        final lastBackup = stats['lastBackupTime'] as DateTime?;
+        final dbSize = (dbInfo['sizeMB'] as num?)?.toDouble() ?? 0;
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.backup_rounded),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Respaldo y restauración',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Crea copias locales de la base de datos, expórtalas a otro equipo o recupera información si algo sale mal.',
+                      style: TextStyle(color: colors.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _crearRespaldo,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Crear respaldo'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _importarArchivo,
+                          icon: const Icon(Icons.file_upload_outlined),
+                          label: const Text('Importar archivo'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _reload,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Actualizar'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Para mover datos entre computadoras: exporta un respaldo aquí y luego usa “Importar archivo” en el otro equipo.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InsightTile(
+                  title: 'Respaldos',
+                  value: '${stats['totalBackups'] ?? backups.length}',
+                  subtitle: 'Copias guardadas',
+                  icon: Icons.inventory_2_outlined,
+                  color: Colors.indigo,
+                ),
+                _InsightTile(
+                  title: 'Base activa',
+                  value: '${dbSize.toStringAsFixed(2)} MB',
+                  subtitle: 'Tamaño actual',
+                  icon: Icons.storage_rounded,
+                  color: Colors.teal,
+                ),
+                _InsightTile(
+                  title: 'Último respaldo',
+                  value: lastBackup == null
+                      ? 'Nunca'
+                      : DateFormat('dd/MM HH:mm').format(lastBackup),
+                  subtitle: 'Última ejecución',
+                  icon: Icons.history_toggle_off_rounded,
+                  color: Colors.deepOrange,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.folder_open_rounded),
+                title: const Text('Ubicación de la base local'),
+                subtitle: Text(
+                  dbInfo['path']?.toString() ?? 'Ruta no disponible',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Respaldos disponibles',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (backups.isEmpty)
+              const _EmptyState(
+                mensaje: 'Aún no hay respaldos guardados en este equipo.',
+              )
+            else
+              ...backups.map(
+                (backup) => Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: colors.primaryContainer,
+                      child: Icon(
+                        Icons.save_as_rounded,
+                        color: colors.onPrimaryContainer,
+                      ),
+                    ),
+                    title: Text(backup['name'].toString()),
+                    subtitle: Text(
+                      '${backup['createdFormatted']} • ${backup['sizeFormatted']}',
+                    ),
+                    trailing: PopupMenuButton<String>(
+                      tooltip: 'Acciones del respaldo',
+                      onSelected: (value) async {
+                        switch (value) {
+                          case 'exportar':
+                            await _exportarRespaldo(backup['name'].toString());
+                            break;
+                          case 'restaurar':
+                            await _restaurar(backup);
+                            break;
+                          case 'eliminar':
+                            await _eliminar(backup);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem<String>(
+                          value: 'exportar',
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.file_download_outlined),
+                            title: Text('Exportar'),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'restaurar',
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.settings_backup_restore_rounded,
+                            ),
+                            title: Text('Restaurar'),
+                          ),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'eliminar',
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.delete_outline_rounded),
+                            title: Text('Eliminar'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 // ── Shared Widgets ─────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecommendationTile extends StatelessWidget {
+  const _RecommendationTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    this.isLast = false,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: color.withValues(alpha: 0.14),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 2),
+                Text(subtitle),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShareBarTile extends StatelessWidget {
+  const _ShareBarTile({
+    required this.label,
+    required this.percentage,
+    required this.value,
+    required this.subtitle,
+    required this.color,
+  });
+
+  final String label;
+  final double percentage;
+  final String value;
+  final String subtitle;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            Text(
+              '${percentage.toStringAsFixed(1)}%',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: (percentage / 100).clamp(0, 1),
+          minHeight: 7,
+          borderRadius: BorderRadius.circular(999),
+          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+          color: color,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$value · $subtitle',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InsightTile extends StatelessWidget {
+  const _InsightTile({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 180, maxWidth: 240),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.18)),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: color.withValues(alpha: 0.15),
+              child: Icon(icon, size: 16, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    value,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _KpiCard extends StatelessWidget {
   const _KpiCard({

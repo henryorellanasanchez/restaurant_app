@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'package:restaurant_app/features/menu/domain/entities/categoria.dart';
 import 'package:restaurant_app/features/menu/domain/entities/producto.dart';
@@ -27,10 +32,8 @@ class ProductoFormDialog extends StatefulWidget {
     return showDialog<Producto>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => ProductoFormDialog(
-        producto: producto,
-        categorias: categorias,
-      ),
+      builder: (_) =>
+          ProductoFormDialog(producto: producto, categorias: categorias),
     );
   }
 
@@ -39,13 +42,18 @@ class ProductoFormDialog extends StatefulWidget {
 }
 
 class _ProductoFormDialogState extends State<ProductoFormDialog> {
+  static const int _previewCacheWidth = 720;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _descripcionCtrl;
   late final TextEditingController _precioCtrl;
+  late final TextEditingController _imagenUrlCtrl;
+  String? _selectedImageData;
   late String _categoriaId;
   bool _disponible = true;
   bool _activo = true;
+  bool _pickingImage = false;
   List<_VarianteEditable> _variantes = [];
 
   bool get _isEditing => widget.producto != null;
@@ -57,11 +65,18 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
     _nombreCtrl = TextEditingController(text: p?.nombre ?? '');
     _descripcionCtrl = TextEditingController(text: p?.descripcion ?? '');
     _precioCtrl = TextEditingController(
-        text: p != null ? p.precio.toStringAsFixed(2) : '');
-    _categoriaId = p?.categoriaId ??
-        (widget.categorias.isNotEmpty
-            ? widget.categorias.first.id
-            : '');
+      text: p != null ? p.precio.toStringAsFixed(2) : '',
+    );
+    final initialImage = p?.imagenUrl?.trim() ?? '';
+    _selectedImageData = initialImage.startsWith('data:image')
+        ? initialImage
+        : null;
+    _imagenUrlCtrl = TextEditingController(
+      text: _selectedImageData == null ? initialImage : '',
+    );
+    _categoriaId =
+        p?.categoriaId ??
+        (widget.categorias.isNotEmpty ? widget.categorias.first.id : '');
     _disponible = p?.disponible ?? true;
     _activo = p?.activo ?? true;
     _variantes = (p?.variantes ?? [])
@@ -74,6 +89,7 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
     _nombreCtrl.dispose();
     _descripcionCtrl.dispose();
     _precioCtrl.dispose();
+    _imagenUrlCtrl.dispose();
     for (final v in _variantes) {
       v.dispose();
     }
@@ -93,6 +109,165 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
     });
   }
 
+  String get _imageValue {
+    final selected = _selectedImageData?.trim();
+    if (selected != null && selected.isNotEmpty) return selected;
+    return _imagenUrlCtrl.text.trim();
+  }
+
+  Future<void> _pickImage() async {
+    setState(() => _pickingImage = true);
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (!mounted || result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo leer la imagen seleccionada'),
+          ),
+        );
+        return;
+      }
+
+      final ext = (file.extension ?? 'png').toLowerCase();
+      final optimized = await compute(
+        _processImageIsolate,
+        _ImageInput(bytes: bytes, extension: ext),
+      );
+      final imageBytes = optimized?.bytes ?? bytes;
+      final mimeType =
+          optimized?.mimeType ??
+          switch (ext) {
+            'jpg' || 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            _ => 'image/png',
+          };
+
+      _selectedImageData = 'data:$mimeType;base64,${base64Encode(imageBytes)}';
+      _imagenUrlCtrl.clear();
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo cargar la foto de referencia'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _pickingImage = false);
+    }
+  }
+
+  Widget _buildImagePreview(ColorScheme cs) {
+    final raw = _imageValue;
+    if (raw.isEmpty) {
+      return _buildImagePlaceholder(cs, message: 'Sin foto de referencia');
+    }
+
+    if (raw.startsWith('data:image')) {
+      final commaIndex = raw.indexOf(',');
+      if (commaIndex == -1) {
+        return _buildImagePlaceholder(
+          cs,
+          message: 'Formato de imagen inválido',
+        );
+      }
+
+      try {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.memory(
+            base64Decode(raw.substring(commaIndex + 1)),
+            height: 160,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            cacheWidth: _previewCacheWidth,
+            filterQuality: FilterQuality.low,
+          ),
+        );
+      } catch (_) {
+        return _buildImagePlaceholder(
+          cs,
+          message: 'No se pudo mostrar la imagen',
+        );
+      }
+    }
+
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          raw,
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          cacheWidth: _previewCacheWidth,
+          filterQuality: FilterQuality.low,
+          errorBuilder: (_, __, ___) =>
+              _buildImagePlaceholder(cs, message: 'No se pudo cargar la URL'),
+        ),
+      );
+    }
+
+    if (raw.startsWith('assets/')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.asset(
+          raw,
+          height: 160,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          cacheWidth: _previewCacheWidth,
+          filterQuality: FilterQuality.low,
+          errorBuilder: (_, __, ___) => _buildImagePlaceholder(
+            cs,
+            message: 'No se pudo cargar el recurso local',
+          ),
+        ),
+      );
+    }
+
+    return _buildImagePlaceholder(
+      cs,
+      message: 'Pega una URL válida o selecciona una imagen',
+    );
+  }
+
+  Widget _buildImagePlaceholder(ColorScheme cs, {required String message}) {
+    return Container(
+      height: 160,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.photo_outlined, size: 36, color: cs.onSurfaceVariant),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: cs.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
 
@@ -104,25 +279,26 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
         id: v.id ?? const Uuid().v4(),
         productoId: productoId,
         nombre: v.nombreCtrl.text.trim(),
-        precio:
-            double.tryParse(v.precioCtrl.text.trim()) ?? 0.0,
+        precio: double.tryParse(v.precioCtrl.text.trim()) ?? 0.0,
         activo: true,
         createdAt: v.createdAt ?? now,
         updatedAt: now,
       );
     }).toList();
 
+    final imagenUrl = _imageValue;
+
     final producto = Producto(
       id: productoId,
-      restaurantId: widget.producto?.restaurantId ??
-          AppConstants.defaultRestaurantId,
+      restaurantId:
+          widget.producto?.restaurantId ?? AppConstants.defaultRestaurantId,
       categoriaId: _categoriaId,
       nombre: _nombreCtrl.text.trim(),
       descripcion: _descripcionCtrl.text.trim().isEmpty
           ? null
           : _descripcionCtrl.text.trim(),
-      precio:
-          double.tryParse(_precioCtrl.text.trim()) ?? 0.0,
+      precio: double.tryParse(_precioCtrl.text.trim()) ?? 0.0,
+      imagenUrl: imagenUrl.isEmpty ? null : imagenUrl,
       disponible: _disponible,
       activo: _activo,
       createdAt: widget.producto?.createdAt ?? now,
@@ -139,8 +315,12 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
 
     return AlertDialog(
       title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
-      content: SizedBox(
-        width: 500,
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 500,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.80,
+        ),
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -179,15 +359,85 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
                 ),
                 const SizedBox(height: 12),
 
+                // ── Foto de referencia ───────────────────────────
+                Text(
+                  'Foto de referencia (opcional)',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildImagePreview(theme.colorScheme),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _imagenUrlCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'URL de la foto',
+                    hintText:
+                        'Pega un enlace o usa el botón para elegir una imagen',
+                    prefixIcon: Icon(Icons.link_outlined),
+                    alignLabelWithHint: true,
+                  ),
+                  onChanged: (_) {
+                    if (_selectedImageData != null) {
+                      _selectedImageData = null;
+                    }
+                    setState(() {});
+                  },
+                ),
+                if (_selectedImageData != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Imagen seleccionada desde el dispositivo.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _pickingImage ? null : _pickImage,
+                      icon: Icon(
+                        _pickingImage
+                            ? Icons.hourglass_top
+                            : Icons.photo_library_outlined,
+                      ),
+                      label: Text(
+                        _pickingImage
+                            ? 'Cargando...'
+                            : (_imageValue.isEmpty
+                                  ? 'Seleccionar foto'
+                                  : 'Cambiar foto'),
+                      ),
+                    ),
+                    if (_imageValue.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () {
+                          _selectedImageData = null;
+                          _imagenUrlCtrl.clear();
+                          setState(() {});
+                        },
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Quitar foto'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
                 // ── Precio + Categoría ───────────────────────────
                 Row(
                   children: [
                     Expanded(
                       child: TextFormField(
                         controller: _precioCtrl,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
-                                decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'Precio *',
                           prefixText: '\$ ',
@@ -215,20 +465,21 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
                           prefixIcon: Icon(Icons.category_outlined),
                         ),
                         items: widget.categorias
-                            .map((c) => DropdownMenuItem(
-                                  value: c.id,
-                                  child: Text(c.nombre),
-                                ))
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c.id,
+                                child: Text(c.nombre),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
                           if (v != null) {
                             setState(() => _categoriaId = v);
                           }
                         },
-                        validator: (v) =>
-                            (v == null || v.isEmpty)
-                                ? 'Selecciona una categoría'
-                                : null,
+                        validator: (v) => (v == null || v.isEmpty)
+                            ? 'Selecciona una categoría'
+                            : null,
                       ),
                     ),
                   ],
@@ -257,7 +508,8 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
                     Text(
                       'Variantes (opcional)',
                       style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const Spacer(),
                     TextButton.icon(
@@ -273,20 +525,19 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
                     child: Text(
                       'Sin variantes — el precio base aplica para todos.',
                       style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant),
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   )
                 else
                   ListView.builder(
                     shrinkWrap: true,
-                    physics:
-                        const NeverScrollableScrollPhysics(),
+                    physics: const NeverScrollableScrollPhysics(),
                     itemCount: _variantes.length,
                     itemBuilder: (_, i) {
                       final v = _variantes[i];
                       return Padding(
-                        padding:
-                            const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: Row(
                           children: [
                             Expanded(
@@ -299,8 +550,7 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
                                   isDense: true,
                                 ),
                                 validator: (val) {
-                                  if (val == null ||
-                                      val.trim().isEmpty) {
+                                  if (val == null || val.trim().isEmpty) {
                                     return 'Requerido';
                                   }
                                   return null;
@@ -314,19 +564,18 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
                                 controller: v.precioCtrl,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
-                                        decimal: true),
+                                      decimal: true,
+                                    ),
                                 decoration: const InputDecoration(
                                   labelText: 'Precio',
                                   prefixText: '\$ ',
                                   isDense: true,
                                 ),
                                 validator: (val) {
-                                  if (val == null ||
-                                      val.trim().isEmpty) {
+                                  if (val == null || val.trim().isEmpty) {
                                     return 'Requerido';
                                   }
-                                  final p =
-                                      double.tryParse(val.trim());
+                                  final p = double.tryParse(val.trim());
                                   if (p == null || p < 0) {
                                     return 'Inválido';
                                   }
@@ -350,8 +599,7 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
           ),
         ),
       ),
-      actionsPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -366,6 +614,48 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
   }
 }
 
+/// Datos de entrada para el procesamiento de imagen en un Isolate.
+class _ImageInput {
+  final Uint8List bytes;
+  final String extension;
+  const _ImageInput({required this.bytes, required this.extension});
+}
+
+class _OptimizedImage {
+  final Uint8List bytes;
+  final String mimeType;
+
+  const _OptimizedImage({required this.bytes, required this.mimeType});
+}
+
+/// Función top-level para procesar/redimensionar una imagen en un Isolate
+/// separado via [compute], evitando bloquear el hilo principal de la UI.
+_OptimizedImage? _processImageIsolate(_ImageInput input) {
+  const maxWidth = 1280;
+  final decoded = img.decodeImage(input.bytes);
+  if (decoded == null) return null;
+
+  final resized = decoded.width > maxWidth
+      ? img.copyResize(decoded, width: maxWidth)
+      : decoded;
+
+  final normalizedExt = input.extension.toLowerCase();
+  final preserveTransparency =
+      resized.hasAlpha || normalizedExt == 'png' || normalizedExt == 'webp';
+
+  if (preserveTransparency) {
+    return _OptimizedImage(
+      mimeType: 'image/png',
+      bytes: Uint8List.fromList(img.encodePng(resized, level: 6)),
+    );
+  }
+
+  return _OptimizedImage(
+    mimeType: 'image/jpeg',
+    bytes: Uint8List.fromList(img.encodeJpg(resized, quality: 78)),
+  );
+}
+
 /// Modelo editable de una variante dentro del formulario.
 class _VarianteEditable {
   final String? id;
@@ -378,16 +668,15 @@ class _VarianteEditable {
     this.createdAt,
     TextEditingController? nombreCtrl,
     TextEditingController? precioCtrl,
-  })  : nombreCtrl = nombreCtrl ?? TextEditingController(),
-        precioCtrl = precioCtrl ?? TextEditingController();
+  }) : nombreCtrl = nombreCtrl ?? TextEditingController(),
+       precioCtrl = precioCtrl ?? TextEditingController();
 
   factory _VarianteEditable.fromEntity(Variante v) {
     return _VarianteEditable(
       id: v.id,
       createdAt: v.createdAt,
       nombreCtrl: TextEditingController(text: v.nombre),
-      precioCtrl:
-          TextEditingController(text: v.precio.toStringAsFixed(2)),
+      precioCtrl: TextEditingController(text: v.precio.toStringAsFixed(2)),
     );
   }
 

@@ -79,6 +79,44 @@ enum MetodoPago {
   }
 }
 
+/// Tipo de comprobante generado al cobrar.
+enum TipoComprobante {
+  ticket('ticket', 'Ticket'),
+  factura('factura', 'Factura');
+
+  final String value;
+  final String label;
+
+  const TipoComprobante(this.value, this.label);
+
+  static TipoComprobante fromString(String value) {
+    return TipoComprobante.values.firstWhere(
+      (e) => e.value == value,
+      orElse: () => TipoComprobante.ticket,
+    );
+  }
+}
+
+/// Estado interno del flujo SRI para una venta/factura.
+enum EstadoComprobanteSri {
+  noAplica('no_aplica', 'No aplica'),
+  preparado('preparado', 'Listo para SRI'),
+  noConfigurado('no_configurado', 'Sin configurar'),
+  error('error', 'Con incidencia');
+
+  final String value;
+  final String label;
+
+  const EstadoComprobanteSri(this.value, this.label);
+
+  static EstadoComprobanteSri fromString(String value) {
+    return EstadoComprobanteSri.values.firstWhere(
+      (e) => e.value == value,
+      orElse: () => EstadoComprobanteSri.noAplica,
+    );
+  }
+}
+
 // ── Roles de Usuario ─────────────────────────────────────────────────
 
 /// Roles del sistema con permisos diferenciados.
@@ -103,16 +141,45 @@ enum RolUsuario {
   /// El administrador tiene acceso total.
   bool get esAdmin => this == RolUsuario.administrador;
 
+  /// Puede acceder al dashboard principal.
+  bool get puedeVerInicio => this != RolUsuario.cocina;
+
+  /// Puede gestionar mesas (admin y mesero).
+  bool get puedeGestionarMesas =>
+      this == RolUsuario.administrador || this == RolUsuario.mesero;
+
+  /// Puede ver y operar cocina (admin y cocina).
+  bool get puedeGestionarCocina =>
+      this == RolUsuario.administrador || this == RolUsuario.cocina;
+
+  /// Puede gestionar el menú del sistema.
+  bool get puedeGestionarMenu => esAdmin;
+
+  /// Puede gestionar reservas.
+  bool get puedeGestionarReservas => esAdmin;
+
+  /// Puede gestionar cotizaciones.
+  bool get puedeGestionarCotizaciones => esAdmin;
+
   /// Puede ver reportes (admin y cajero).
   bool get puedeVerReportes =>
       this == RolUsuario.administrador || this == RolUsuario.cajero;
 
-  /// Puede gestionar pedidos (admin, mesero, cajero).
+  /// Puede ver información financiera y de ventas.
+  bool get puedeVerResumenFinanciero => puedeVerReportes;
+
+  /// Puede gestionar pedidos (admin, mesero y cajero).
   bool get puedeGestionarPedidos => this != RolUsuario.cocina;
 
   /// Puede gestionar caja (admin y cajero).
   bool get puedeGestionarCaja =>
       this == RolUsuario.administrador || this == RolUsuario.cajero;
+
+  /// Puede administrar usuarios.
+  bool get puedeGestionarUsuarios => esAdmin;
+
+  /// Puede operar sincronización y tareas sensibles.
+  bool get puedeSincronizar => esAdmin;
 }
 
 // ── Operaciones de Sincronización ────────────────────────────────────
@@ -160,7 +227,7 @@ enum EstadoLlamado {
 /// Tipo de reservacion.
 enum TipoReserva {
   mesa('mesa', 'Mesa'),
-  local('local', 'Local');
+  local('local', 'Evento privado');
 
   final String value;
   final String label;
@@ -171,6 +238,48 @@ enum TipoReserva {
     return TipoReserva.values.firstWhere(
       (e) => e.value == value,
       orElse: () => TipoReserva.mesa,
+    );
+  }
+}
+
+/// Estado de una reservación.
+enum EstadoReserva {
+  pendiente('pendiente', 'Pendiente'),
+  confirmada('confirmada', 'Confirmada'),
+  cancelada('cancelada', 'Cancelada'),
+  completada('completada', 'Completada'),
+  noAsistio('no_asistio', 'No asistió');
+
+  final String value;
+  final String label;
+
+  const EstadoReserva(this.value, this.label);
+
+  static EstadoReserva fromString(String value) {
+    return EstadoReserva.values.firstWhere(
+      (e) => e.value == value,
+      orElse: () => EstadoReserva.pendiente,
+    );
+  }
+}
+
+/// Tipos simples de evento para reserva del local completo.
+enum TipoEvento {
+  cumpleanos('cumpleanos', 'Cumpleaños'),
+  reunion('reunion', 'Reunión'),
+  corporativo('corporativo', 'Corporativo'),
+  privado('privado', 'Privado'),
+  otro('otro', 'Otro');
+
+  final String value;
+  final String label;
+
+  const TipoEvento(this.value, this.label);
+
+  static TipoEvento fromString(String value) {
+    return TipoEvento.values.firstWhere(
+      (e) => e.value == value,
+      orElse: () => TipoEvento.otro,
     );
   }
 }

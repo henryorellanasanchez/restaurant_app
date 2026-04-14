@@ -21,6 +21,11 @@ class ReservasState {
     this.errorMessage,
   });
 
+  int get totalHoy => reservasDia.length;
+  int get pendientesHoy =>
+      reservasDia.where((r) => r.estado == EstadoReserva.pendiente).length;
+  int get eventosHoy => reservasDia.where((r) => r.esEventoPrivado).length;
+
   ReservasState copyWith({
     List<Reserva>? reservasMes,
     List<Reserva>? reservasDia,
@@ -38,14 +43,17 @@ class ReservasState {
 
 class ReservasNotifier extends StateNotifier<ReservasState> {
   final CreateReserva _createReserva;
+  final UpdateReserva _updateReserva;
   final GetReservasByMonth _getByMonth;
   final GetReservasByDate _getByDate;
 
   ReservasNotifier({
     required CreateReserva createReserva,
+    required UpdateReserva updateReserva,
     required GetReservasByMonth getByMonth,
     required GetReservasByDate getByDate,
   }) : _createReserva = createReserva,
+       _updateReserva = updateReserva,
        _getByMonth = getByMonth,
        _getByDate = getByDate,
        super(const ReservasState());
@@ -63,7 +71,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
     final result = await _getByMonth([rid, start, end]);
     result.fold(
       (f) => state = state.copyWith(isLoading: false, errorMessage: f.message),
-      (items) => state = state.copyWith(isLoading: false, reservasMes: items),
+      (items) => state = state.copyWith(
+        isLoading: false,
+        reservasMes: _ordenarPorHora(items),
+      ),
     );
   }
 
@@ -73,80 +84,283 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
     final result = await _getByDate([rid, date]);
     result.fold(
       (f) => state = state.copyWith(errorMessage: f.message),
-      (items) => state = state.copyWith(reservasDia: items),
+      (items) => state = state.copyWith(reservasDia: _ordenarPorHora(items)),
     );
   }
 
   Future<bool> crearReserva({
     required TipoReserva tipo,
     required DateTime fecha,
+    required String horaInicio,
+    String? horaFin,
+    required int numeroPersonas,
     String? mesaId,
     String? mesaNombre,
     required String clienteNombre,
     required String clienteTelefono,
     required String clienteEmail,
     String? notas,
+    EstadoReserva estado = EstadoReserva.pendiente,
+    String? tipoEvento,
+    String? requerimientos,
+  }) {
+    return _guardarReserva(
+      tipo: tipo,
+      fecha: fecha,
+      horaInicio: horaInicio,
+      horaFin: horaFin,
+      numeroPersonas: numeroPersonas,
+      mesaId: mesaId,
+      mesaNombre: mesaNombre,
+      clienteNombre: clienteNombre,
+      clienteTelefono: clienteTelefono,
+      clienteEmail: clienteEmail,
+      notas: notas,
+      estado: estado,
+      tipoEvento: tipoEvento,
+      requerimientos: requerimientos,
+    );
+  }
+
+  Future<bool> actualizarReserva({
+    required String reservaId,
+    required TipoReserva tipo,
+    required DateTime fecha,
+    required String horaInicio,
+    String? horaFin,
+    required int numeroPersonas,
+    String? mesaId,
+    String? mesaNombre,
+    required String clienteNombre,
+    required String clienteTelefono,
+    required String clienteEmail,
+    String? notas,
+    EstadoReserva estado = EstadoReserva.pendiente,
+    String? tipoEvento,
+    String? requerimientos,
+  }) {
+    return _guardarReserva(
+      reservaId: reservaId,
+      tipo: tipo,
+      fecha: fecha,
+      horaInicio: horaInicio,
+      horaFin: horaFin,
+      numeroPersonas: numeroPersonas,
+      mesaId: mesaId,
+      mesaNombre: mesaNombre,
+      clienteNombre: clienteNombre,
+      clienteTelefono: clienteTelefono,
+      clienteEmail: clienteEmail,
+      notas: notas,
+      estado: estado,
+      tipoEvento: tipoEvento,
+      requerimientos: requerimientos,
+    );
+  }
+
+  Future<bool> _guardarReserva({
+    String? reservaId,
+    required TipoReserva tipo,
+    required DateTime fecha,
+    required String horaInicio,
+    String? horaFin,
+    required int numeroPersonas,
+    String? mesaId,
+    String? mesaNombre,
+    required String clienteNombre,
+    required String clienteTelefono,
+    required String clienteEmail,
+    String? notas,
+    EstadoReserva estado = EstadoReserva.pendiente,
+    String? tipoEvento,
+    String? requerimientos,
   }) async {
+    state = state.copyWith(errorMessage: null);
+
     final dateStr = DateFormat('yyyy-MM-dd').format(fecha);
+    final finalHoraFin = (horaFin == null || horaFin.isEmpty)
+        ? _sumarMinutos(horaInicio, AppConstants.reservaDuracionMinutos)
+        : horaFin;
+
+    if (numeroPersonas <= 0) {
+      state = state.copyWith(
+        errorMessage: 'Ingresa un número válido de personas',
+      );
+      return false;
+    }
+
+    if (!_rangoHorarioValido(horaInicio, finalHoraFin)) {
+      state = state.copyWith(
+        errorMessage: 'La hora final debe ser mayor a la hora de inicio',
+      );
+      return false;
+    }
+
+    if (!_estaDentroHorario(horaInicio, finalHoraFin)) {
+      state = state.copyWith(
+        errorMessage:
+            'La reserva debe estar dentro del horario del restaurante (${AppConstants.restaurantOpeningHour}:00 - ${AppConstants.restaurantClosingHour}:00)',
+      );
+      return false;
+    }
 
     final reservas = state.reservasMes
-        .where((r) => r.fecha == dateStr)
+        .where(
+          (r) =>
+              r.fecha == dateStr &&
+              _reservaBloqueaHorario(r.estado) &&
+              r.id != reservaId,
+        )
         .toList();
-    final localReservado = reservas.any((r) => r.tipo == TipoReserva.local);
 
-    if (tipo == TipoReserva.local && reservas.isNotEmpty) {
-      state = state.copyWith(errorMessage: 'Ya hay reservas en esa fecha');
+    final conflictos = reservas.where((r) {
+      return _hayCruceHorario(
+        r.horaInicio,
+        r.horaFin,
+        horaInicio,
+        finalHoraFin,
+      );
+    }).toList();
+
+    if (tipo == TipoReserva.local && conflictos.isNotEmpty) {
+      state = state.copyWith(
+        errorMessage:
+            'Ya existen reservas en ese horario. No se puede bloquear todo el local.',
+      );
       return false;
     }
 
     if (tipo == TipoReserva.mesa) {
-      if (localReservado) {
-        state = state.copyWith(
-          errorMessage: 'El local esta reservado en esa fecha',
-        );
-        return false;
-      }
       if (mesaId == null || mesaId.isEmpty) {
         state = state.copyWith(errorMessage: 'Selecciona una mesa');
         return false;
       }
-      final mesaReservada = reservas.any(
+
+      final localReservado = conflictos.any((r) => r.tipo == TipoReserva.local);
+      if (localReservado) {
+        state = state.copyWith(
+          errorMessage:
+              'El local ya está reservado como evento privado en ese horario',
+        );
+        return false;
+      }
+
+      final mesaReservada = conflictos.any(
         (r) => r.tipo == TipoReserva.mesa && r.mesaId == mesaId,
       );
       if (mesaReservada) {
         state = state.copyWith(
-          errorMessage: 'La mesa ya esta reservada en esa fecha',
+          errorMessage: 'La mesa ya está reservada en ese horario',
         );
         return false;
       }
     }
 
     final reserva = Reserva(
-      id: const Uuid().v4(),
+      id: reservaId ?? const Uuid().v4(),
       restaurantId: AppConstants.defaultRestaurantId,
       tipo: tipo,
       mesaId: mesaId,
       mesaNombre: mesaNombre,
       fecha: dateStr,
+      horaInicio: horaInicio,
+      horaFin: finalHoraFin,
+      numeroPersonas: numeroPersonas,
+      estado: estado,
+      tipoEvento: tipo == TipoReserva.local ? tipoEvento : null,
       clienteNombre: clienteNombre,
       clienteTelefono: clienteTelefono,
       clienteEmail: clienteEmail,
       notas: notas,
+      requerimientos: requerimientos,
       createdAt: DateTime.now(),
     );
 
-    final result = await _createReserva(reserva);
-    return result.fold(
-      (f) {
+    final result = reservaId == null
+        ? await _createReserva(reserva)
+        : await _updateReserva(reserva);
+    var ok = false;
+
+    await result.fold<Future<void>>(
+      (f) async {
         state = state.copyWith(errorMessage: f.message);
-        return false;
       },
       (_) async {
         await loadMes(fecha);
         await loadDia(fecha);
-        return true;
+        ok = true;
       },
     );
+
+    return ok;
+  }
+
+  /// Cambia el estado de una reserva existente sin modificar ningún otro campo.
+  Future<bool> cambiarEstado(Reserva reserva, EstadoReserva nuevoEstado) async {
+    final actualizada = reserva.copyWith(estado: nuevoEstado);
+    var ok = false;
+    final result = await _updateReserva(actualizada);
+    await result.fold<Future<void>>(
+      (f) async => state = state.copyWith(errorMessage: f.message),
+      (_) async {
+        final fecha = DateTime.parse(reserva.fecha);
+        await loadMes(fecha);
+        await loadDia(fecha);
+        ok = true;
+      },
+    );
+    return ok;
+  }
+
+  List<Reserva> _ordenarPorHora(List<Reserva> items) {
+    final copy = [...items];
+    copy.sort(
+      (a, b) => _aMinutos(a.horaInicio).compareTo(_aMinutos(b.horaInicio)),
+    );
+    return copy;
+  }
+
+  bool _reservaBloqueaHorario(EstadoReserva estado) {
+    return estado != EstadoReserva.cancelada &&
+        estado != EstadoReserva.noAsistio &&
+        estado != EstadoReserva.completada;
+  }
+
+  bool _hayCruceHorario(
+    String inicioA,
+    String finA,
+    String inicioB,
+    String finB,
+  ) {
+    final aInicio = _aMinutos(inicioA);
+    final aFin = _aMinutos(finA);
+    final bInicio = _aMinutos(inicioB);
+    final bFin = _aMinutos(finB);
+    return aInicio < bFin && bInicio < aFin;
+  }
+
+  bool _rangoHorarioValido(String inicio, String fin) {
+    return _aMinutos(fin) > _aMinutos(inicio);
+  }
+
+  bool _estaDentroHorario(String inicio, String fin) {
+    final apertura = AppConstants.restaurantOpeningHour * 60;
+    final cierre = AppConstants.restaurantClosingHour * 60;
+    return _aMinutos(inicio) >= apertura && _aMinutos(fin) <= cierre;
+  }
+
+  int _aMinutos(String value) {
+    final parts = value.split(':');
+    final hour = parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
+    final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return (hour * 60) + minute;
+  }
+
+  String _sumarMinutos(String value, int minutes) {
+    final total = _aMinutos(value) + minutes;
+    final hour = (total ~/ 60).toString().padLeft(2, '0');
+    final minute = (total % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 }
 
@@ -154,6 +368,7 @@ final reservasProvider = StateNotifierProvider<ReservasNotifier, ReservasState>(
   (ref) {
     return ReservasNotifier(
       createReserva: sl<CreateReserva>(),
+      updateReserva: sl<UpdateReserva>(),
       getByMonth: sl<GetReservasByMonth>(),
       getByDate: sl<GetReservasByDate>(),
     );

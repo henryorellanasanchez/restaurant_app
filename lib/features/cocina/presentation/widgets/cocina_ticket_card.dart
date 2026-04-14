@@ -32,6 +32,9 @@ class CocinaTicketCard extends StatelessWidget {
     final colorEstado = _colorByEstado(pedido.estado);
     final elapsed = pedido.tiempoTranscurrido;
     final isUrgente = elapsed.inMinutes >= 20;
+    final itemsListos = pedido.items
+        .where((item) => item.estado == EstadoPedido.finalizado)
+        .length;
 
     return Card(
       color: cs.surface,
@@ -52,6 +55,25 @@ class CocinaTicketCard extends StatelessWidget {
           _buildHeader(theme, cs, colorEstado, elapsed, isUrgente),
 
           // ── Items ────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: Row(
+              children: [
+                Icon(Icons.flash_on_rounded, size: 14, color: colorEstado),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Toque rápido: $itemsListos/${pedido.items.length} items listos',
+                    style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Column(
@@ -237,11 +259,10 @@ class CocinaTicketCard extends StatelessWidget {
   String _labelNextEstado(EstadoPedido estado) {
     switch (estado) {
       case EstadoPedido.creado:
-        return 'ACEPTAR PEDIDO';
       case EstadoPedido.aceptado:
-        return 'INICIAR PREPARACIÓN';
+        return 'EMPEZAR AHORA';
       case EstadoPedido.enPreparacion:
-        return 'MARCAR COMO LISTO';
+        return 'MARCAR TODO LISTO';
       default:
         return '';
     }
@@ -250,9 +271,8 @@ class CocinaTicketCard extends StatelessWidget {
   IconData _iconNextEstado(EstadoPedido estado) {
     switch (estado) {
       case EstadoPedido.creado:
-        return Icons.check_circle_outline_rounded;
       case EstadoPedido.aceptado:
-        return Icons.restaurant_rounded;
+        return Icons.play_arrow_rounded;
       case EstadoPedido.enPreparacion:
         return Icons.done_all_rounded;
       default:

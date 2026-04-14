@@ -14,7 +14,7 @@ import 'package:restaurant_app/features/auth/presentation/providers/auth_provide
 /// Se adapta automáticamente:
 /// - Pantallas grandes → NavigationRail expandido
 /// - Tablets → NavigationRail compacto
-/// - Móvil → BottomNavigationBar (futuro)
+/// - Móvil → NavigationBar + menú adicional
 class MainScaffold extends StatelessWidget {
   final Widget child;
 
@@ -26,72 +26,62 @@ class MainScaffold extends StatelessWidget {
       icon: Icons.dashboard_rounded,
       label: 'Inicio',
       path: AppRouter.home,
-      roles: {RolUsuario.administrador, RolUsuario.cajero, RolUsuario.mesero},
     ),
     _NavItem(
       icon: Icons.table_restaurant_rounded,
       label: 'Mesas',
       path: AppRouter.mesas,
-      roles: {RolUsuario.administrador, RolUsuario.mesero},
     ),
     _NavItem(
       icon: Icons.receipt_long_rounded,
       label: 'Pedidos',
       path: AppRouter.pedidos,
-      roles: {RolUsuario.administrador, RolUsuario.cajero, RolUsuario.mesero},
     ),
     _NavItem(
       icon: Icons.soup_kitchen_rounded,
       label: 'Cocina',
       path: AppRouter.cocina,
-      roles: {RolUsuario.administrador, RolUsuario.cocina},
     ),
     _NavItem(
       icon: Icons.restaurant_menu_rounded,
       label: 'Menú',
       path: AppRouter.menu,
-      roles: {RolUsuario.administrador},
     ),
     _NavItem(
       icon: Icons.calendar_month_rounded,
       label: 'Reservas',
       path: AppRouter.reservas,
-      roles: {RolUsuario.administrador},
     ),
     _NavItem(
       icon: Icons.request_quote_rounded,
       label: 'Cotizaciones',
       path: AppRouter.cotizaciones,
-      roles: {RolUsuario.administrador},
     ),
     _NavItem(
       icon: Icons.point_of_sale_rounded,
       label: 'Caja',
       path: AppRouter.caja,
-      roles: {RolUsuario.administrador, RolUsuario.cajero},
     ),
     _NavItem(
       icon: Icons.analytics_rounded,
       label: 'Reportes',
       path: AppRouter.reportes,
-      roles: {RolUsuario.administrador, RolUsuario.cajero},
     ),
     _NavItem(
       icon: Icons.manage_accounts_rounded,
       label: 'Usuarios',
       path: AppRouter.usuarios,
-      roles: {RolUsuario.administrador},
     ),
     _NavItem(
       icon: Icons.sync_rounded,
       label: 'Sincronización',
       path: AppRouter.sincronizacion,
-      roles: {RolUsuario.administrador},
     ),
   ];
 
-  List<_NavItem> _itemsForRole(RolUsuario rol) =>
-      _allNavItems.where((item) => item.roles.contains(rol)).toList();
+  List<_NavItem> _itemsForRole(RolUsuario rol) => _allNavItems
+      .where((item) => AppRouter.isRouteAllowedForRole(rol, item.path))
+      .toList();
 
   int _getSelectedIndex(BuildContext context, List<_NavItem> items) {
     final location = GoRouterState.of(context).uri.toString();
@@ -108,109 +98,213 @@ class MainScaffold extends StatelessWidget {
     final rol = usuario?.rol ?? RolUsuario.mesero;
     final navItems = _itemsForRole(rol);
     final selectedIndex = _getSelectedIndex(context, navItems);
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWideScreen = screenWidth >= 800;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 640;
+    final isWideScreen = screenWidth >= 1000;
+
+    if (isMobile) {
+      final quickNavItems = navItems.take(4).toList();
+      final showMoreMenu = true;
+      final currentPath = navItems[selectedIndex].path;
+      final quickSelectedIndex = quickNavItems.indexWhere(
+        (item) => item.path == currentPath,
+      );
+      final mobileSelectedIndex = quickSelectedIndex >= 0
+          ? quickSelectedIndex
+          : quickNavItems.length;
+
+      return Scaffold(
+        body: SafeArea(child: child),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: mobileSelectedIndex,
+          height: 72,
+          labelBehavior: quickNavItems.length <= 3
+              ? NavigationDestinationLabelBehavior.alwaysShow
+              : NavigationDestinationLabelBehavior.onlyShowSelected,
+          onDestinationSelected: (index) {
+            if (showMoreMenu && index == quickNavItems.length) {
+              showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (sheetContext) {
+                  return SafeArea(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final item in navItems)
+                          ListTile(
+                            leading: Icon(
+                              item.icon,
+                              color: item.path == currentPath
+                                  ? AppColors.primary
+                                  : null,
+                            ),
+                            title: Text(item.label),
+                            selected: item.path == currentPath,
+                            onTap: () {
+                              Navigator.of(sheetContext).pop();
+                              context.go(item.path);
+                            },
+                          ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.logout_rounded),
+                          iconColor: AppColors.secondary,
+                          title: const Text('Cerrar sesión'),
+                          onTap: () async {
+                            Navigator.of(sheetContext).pop();
+                            await auth.logout();
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+              return;
+            }
+
+            context.go(quickNavItems[index].path);
+          },
+          destinations: [
+            ...quickNavItems.map(
+              (item) => NavigationDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.icon, color: AppColors.primary),
+                label: item.label,
+              ),
+            ),
+            if (showMoreMenu)
+              const NavigationDestination(
+                icon: Icon(Icons.menu_rounded),
+                label: 'Más',
+              ),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
-      body: Row(
-        children: [
-          // ── Barra de Navegación Lateral ──────────────────────────
-          NavigationRail(
-            extended: isWideScreen,
-            minExtendedWidth: 200,
-            backgroundColor: Colors.white,
-            selectedIndex: selectedIndex,
-            onDestinationSelected: (index) {
-              context.go(navItems[index].path);
-            },
-            leading: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/images/logo_la_pena.jpg',
-                      width: isWideScreen ? 80 : 40,
-                      height: isWideScreen ? 80 : 40,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Icon(
-                        Icons.restaurant_rounded,
-                        color: AppColors.primary,
-                        size: 36,
-                      ),
-                    ),
-                  ),
-                  if (isWideScreen) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'La Peña',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      'Bar & House',
-                      style: TextStyle(
-                        color: AppColors.secondary,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 11,
-                      ),
-                    ),
-                    if (usuario != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        usuario.nombre,
-                        style: TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 12,
+      body: SafeArea(
+        child: Row(
+          children: [
+            // ── Barra de Navegación Lateral ────────────────────────
+            NavigationRail(
+              extended: isWideScreen,
+              minExtendedWidth: 200,
+              backgroundColor: Colors.white,
+              selectedIndex: selectedIndex,
+              onDestinationSelected: (index) {
+                context.go(navItems[index].path);
+              },
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  children: [
+                    Container(
+                      width: isWideScreen ? 84 : 48,
+                      height: isWideScreen ? 84 : 48,
+                      padding: EdgeInsets.all(isWideScreen ? 6 : 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.18),
                         ),
-                        textAlign: TextAlign.center,
-                        overflow: TextOverflow.ellipsis,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/images/logo_la_pena.jpg',
+                          fit: BoxFit.cover,
+                          cacheWidth: isWideScreen ? 160 : 96,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.restaurant_rounded,
+                            color: AppColors.primary,
+                            size: isWideScreen ? 40 : 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (isWideScreen) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'La Peña',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       Text(
-                        usuario.rol.label,
+                        'Bar & House',
                         style: TextStyle(
                           color: AppColors.secondary,
+                          fontWeight: FontWeight.w500,
                           fontSize: 11,
                         ),
                       ),
+                      if (usuario != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          usuario.nombre,
+                          style: TextStyle(
+                            color: Colors.black87,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          usuario.rol.label,
+                          style: TextStyle(
+                            color: AppColors.secondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ],
                   ],
-                ],
+                ),
               ),
-            ),
-            trailing: Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: IconButton(
-                icon: const Icon(Icons.logout_rounded),
-                tooltip: 'Cerrar sesión',
-                color: AppColors.secondary,
-                onPressed: () {
-                  auth.logout();
-                },
+              trailing: Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: IconButton(
+                  icon: const Icon(Icons.logout_rounded),
+                  tooltip: 'Cerrar sesión',
+                  color: AppColors.secondary,
+                  onPressed: () async {
+                    await auth.logout();
+                  },
+                ),
               ),
+              destinations: navItems
+                  .map(
+                    (item) => NavigationRailDestination(
+                      icon: Icon(item.icon),
+                      selectedIcon: Icon(item.icon, color: AppColors.primary),
+                      label: Text(item.label),
+                    ),
+                  )
+                  .toList(),
             ),
-            destinations: navItems
-                .map(
-                  (item) => NavigationRailDestination(
-                    icon: Icon(item.icon),
-                    selectedIcon: Icon(item.icon, color: AppColors.primary),
-                    label: Text(item.label),
-                  ),
-                )
-                .toList(),
-          ),
 
-          // ── Separador visual ────────────────────────────────────
-          const VerticalDivider(thickness: 1, width: 1),
+            // ── Separador visual ──────────────────────────────────
+            const VerticalDivider(thickness: 1, width: 1),
 
-          // ── Contenido principal ─────────────────────────────────
-          Expanded(child: child),
-        ],
+            // ── Contenido principal ───────────────────────────────
+            Expanded(child: child),
+          ],
+        ),
       ),
     );
   }
@@ -221,12 +315,6 @@ class _NavItem {
   final IconData icon;
   final String label;
   final String path;
-  final Set<RolUsuario> roles;
 
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    required this.path,
-    required this.roles,
-  });
+  const _NavItem({required this.icon, required this.label, required this.path});
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:restaurant_app/features/menu/domain/entities/producto.dart';
@@ -41,6 +43,12 @@ class ProductoCard extends ConsumerWidget {
               height: 6,
               color: disponible ? colorScheme.primary : colorScheme.outline,
             ),
+            Container(
+              height: 132,
+              width: double.infinity,
+              color: colorScheme.surfaceContainerHighest,
+              child: _buildImage(producto.imagenUrl, colorScheme),
+            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -70,9 +78,10 @@ class ProductoCard extends ConsumerWidget {
                           height: 20,
                           child: Switch.adaptive(
                             value: disponible,
-                            onChanged: (val) =>
-                                notifier.cambiarDisponibilidad(
-                                    producto.id, val),
+                            onChanged: (val) => notifier.cambiarDisponibilidad(
+                              producto.id,
+                              val,
+                            ),
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -104,8 +113,10 @@ class ProductoCard extends ConsumerWidget {
                       children: [
                         if (categoriaNombre != null)
                           Chip(
-                            label: Text(categoriaNombre!,
-                                style: const TextStyle(fontSize: 10)),
+                            label: Text(
+                              categoriaNombre!,
+                              style: const TextStyle(fontSize: 10),
+                            ),
                             padding: EdgeInsets.zero,
                             visualDensity: VisualDensity.compact,
                             materialTapTargetSize:
@@ -169,6 +180,63 @@ class ProductoCard extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildImage(String? imageValue, ColorScheme colorScheme) {
+    final raw = imageValue?.trim();
+    if (raw == null || raw.isEmpty) return _placeholder(colorScheme);
+
+    if (raw.startsWith('data:image')) {
+      final commaIndex = raw.indexOf(',');
+      if (commaIndex == -1) return _placeholder(colorScheme);
+
+      try {
+        return Image.memory(
+          base64Decode(raw.substring(commaIndex + 1)),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          cacheWidth: 720,
+          filterQuality: FilterQuality.low,
+          errorBuilder: (_, __, ___) => _placeholder(colorScheme),
+        );
+      } catch (_) {
+        return _placeholder(colorScheme);
+      }
+    }
+
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return Image.network(
+        raw,
+        fit: BoxFit.cover,
+        cacheWidth: 720,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (_, __, ___) => _placeholder(colorScheme),
+      );
+    }
+
+    if (raw.startsWith('assets/')) {
+      return Image.asset(
+        raw,
+        fit: BoxFit.cover,
+        cacheWidth: 720,
+        filterQuality: FilterQuality.low,
+        errorBuilder: (_, __, ___) => _placeholder(colorScheme),
+      );
+    }
+
+    return _placeholder(colorScheme);
+  }
+
+  Widget _placeholder(ColorScheme colorScheme) {
+    return Container(
+      color: colorScheme.surfaceContainerHighest,
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.photo_camera_back_outlined,
+        color: colorScheme.onSurfaceVariant,
+        size: 36,
       ),
     );
   }

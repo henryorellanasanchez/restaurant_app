@@ -22,6 +22,25 @@ class ReservaLocalDataSourceImpl implements ReservaLocalDataSource {
   }
 
   @override
+  Future<void> updateReserva(ReservaModel reserva) async {
+    try {
+      final rows = await _dbHelper.update(
+        _table,
+        reserva.toMap(),
+        where: 'id = ?',
+        whereArgs: [reserva.id],
+      );
+      if (rows == 0) {
+        throw DatabaseException(
+          message: 'La reserva no existe o ya fue eliminada',
+        );
+      }
+    } catch (e) {
+      throw DatabaseException(message: 'Error al actualizar reserva: $e');
+    }
+  }
+
+  @override
   Future<List<ReservaModel>> getReservasByMonth(
     String restaurantId,
     String startDate,
@@ -36,7 +55,7 @@ class ReservaLocalDataSourceImpl implements ReservaLocalDataSource {
         WHERE r.restaurant_id = ?
           AND r.fecha >= ?
           AND r.fecha <= ?
-        ORDER BY r.fecha ASC
+        ORDER BY r.fecha ASC, r.hora_inicio ASC, r.created_at ASC
         ''',
         [restaurantId, startDate, endDate],
       );
@@ -66,7 +85,7 @@ class ReservaLocalDataSourceImpl implements ReservaLocalDataSource {
         LEFT JOIN mesas m ON r.mesa_id = m.id
         WHERE r.restaurant_id = ?
           AND r.fecha = ?
-        ORDER BY r.created_at ASC
+        ORDER BY r.hora_inicio ASC, r.created_at ASC
         ''',
         [restaurantId, date],
       );

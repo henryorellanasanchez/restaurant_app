@@ -10,6 +10,11 @@ class AppConstants {
   static const String appFullName = 'La Peña Bar & Restaurant';
   static const String appVersion = '1.0.0';
 
+  // ── Activación local (demo / licencia fija) ─────────────────────────────
+  static const String demoActivationCode = 'DEMO-LAPENA-7D';
+  static const String fullActivationCode = 'LAPENA-FULL-2026';
+  static const Duration demoActivationDuration = Duration(days: 7);
+
   // ── Moneda ───────────────────────────────────────────────────────────────
   static const String currencySymbol = '\$';
   static const String currencyCode = 'USD';
@@ -22,8 +27,17 @@ class AppConstants {
   static const String contactEmail = 'contacto@lapena.com';
 
   // ── Base de datos ────────────────────────────────────────────────────────
-  static const String databaseName = 'la_pena.db';
-  static const int databaseVersion = 9;
+  /// Nombre único de la base SQLite compartido por móvil y desktop.
+  static const String databaseName = 'data.db';
+  static const int databaseVersion = 12;
+
+  // ── Facturación electrónica / SRI ───────────────────────────────────────
+  /// Endpoint base del backend puente para facturación electrónica.
+  /// La conexión real queda preparada, pero desactivada/comentada por ahora.
+  static const String sriBridgeBaseUrl = 'https://api.tu-dominio.com/sri';
+  static const String sriBridgeInvoicePath = '/facturacion/facturas';
+  static const String sriBridgeAuthorizePath = '/facturacion/autorizar';
+  static const String sriEnvironment = 'pruebas';
 
   // ── Menú público (QR) ─────────────────────────────────────────────
   /// URL base del menú público para generar QR.
@@ -34,6 +48,11 @@ class AppConstants {
   // ── Multi-restaurante ────────────────────────────────────────────────────
   /// ID del restaurante La Peña.
   static const String defaultRestaurantId = 'la_pena_001';
+
+  // ── Reservaciones ─────────────────────────────────────────────────
+  static const int reservaDuracionMinutos = 90;
+  static const int restaurantOpeningHour = 10;
+  static const int restaurantClosingHour = 23;
 
   // ── Estados de Mesa ────────────────────────────────────────────────
   static const String mesaLibre = 'libre';
@@ -57,6 +76,15 @@ class AppConstants {
   static const String rolCajero = 'cajero';
   static const String rolMesero = 'mesero';
   static const String rolCocina = 'cocina';
+
+  // ── Actualizaciones automáticas ───────────────────────────────────
+  /// URL del JSON público con la última versión disponible.
+  /// Puede ser un GitHub Gist (raw) o cualquier host estático.
+  /// Dejar vacío ('') para desactivar el chequeo.
+  /// Ejemplo de URL de Gist:
+  ///   https://gist.githubusercontent.com/tu-usuario/ID_GIST/raw/version.json
+  static const String versionCheckUrl =
+      'https://gist.githubusercontent.com/tu-usuario/REEMPLAZAR/raw/version.json';
 
   // ── Sync ───────────────────────────────────────────────────────────
   static const Duration syncInterval = Duration(minutes: 5);

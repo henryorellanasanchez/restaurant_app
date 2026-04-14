@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
-import 'package:sqflite_common/sqflite.dart';
 
 import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'package:restaurant_app/core/database/database_tables.dart';
+import 'package:restaurant_app/services/database_location_service.dart';
 
 /// Helper singleton para gestionar la base de datos SQLite.
 ///
@@ -26,20 +28,28 @@ class DatabaseHelper {
 
   /// Inicializa la base de datos SQLite.
   Future<Database> _initDatabase() async {
-    // Usar la factory para web
-    final databaseFactory = databaseFactoryFfiWeb;
+    if (kIsWeb) {
+      final webFactory = databaseFactoryFfiWeb;
+      return await webFactory.openDatabase(
+        AppConstants.databaseName,
+        options: OpenDatabaseOptions(
+          version: AppConstants.databaseVersion,
+          onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
+          onOpen: _onOpen,
+        ),
+      );
+    }
 
-    final db = await databaseFactory.openDatabase(
-      AppConstants.databaseName,
-      options: OpenDatabaseOptions(
-        version: AppConstants.databaseVersion,
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-        onOpen: _onOpen,
-      ),
+    final dbPath = await DatabaseLocationService.getDatabasePath();
+
+    return await openDatabase(
+      dbPath,
+      version: AppConstants.databaseVersion,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+      onOpen: _onOpen,
     );
-
-    return db;
   }
 
   /// Crea todas las tablas en la primera ejecución.
@@ -227,6 +237,50 @@ class DatabaseHelper {
       // v9: estado de cotizacion
       await db.execute(
         "ALTER TABLE cotizaciones ADD COLUMN estado TEXT NOT NULL DEFAULT 'pendiente'",
+      );
+    }
+    if (oldVersion < 10) {
+      // v10: metadatos de facturación/SRI en ventas
+      await db.execute(
+        'ALTER TABLE ventas ADD COLUMN cliente_identificacion TEXT',
+      );
+      await db.execute(
+        "ALTER TABLE ventas ADD COLUMN tipo_comprobante TEXT NOT NULL DEFAULT 'ticket'",
+      );
+      await db.execute(
+        "ALTER TABLE ventas ADD COLUMN sri_estado TEXT NOT NULL DEFAULT 'no_aplica'",
+      );
+      await db.execute('ALTER TABLE ventas ADD COLUMN sri_clave_acceso TEXT');
+      await db.execute('ALTER TABLE ventas ADD COLUMN sri_mensaje TEXT');
+    }
+    if (oldVersion < 12) {
+      // v12: tabla de secuenciales SRI
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS sri_secuenciales (
+          id TEXT NOT NULL,
+          restaurant_id TEXT NOT NULL,
+          ultimo_secuencial INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (id, restaurant_id)
+        )
+      ''');
+    }
+    if (oldVersion < 11) {
+      // v11: datos básicos de horario/estado para reservaciones
+      await db.execute(
+        "ALTER TABLE reservaciones ADD COLUMN hora_inicio TEXT NOT NULL DEFAULT '19:00'",
+      );
+      await db.execute(
+        "ALTER TABLE reservaciones ADD COLUMN hora_fin TEXT NOT NULL DEFAULT '20:30'",
+      );
+      await db.execute(
+        'ALTER TABLE reservaciones ADD COLUMN numero_personas INTEGER NOT NULL DEFAULT 2',
+      );
+      await db.execute(
+        "ALTER TABLE reservaciones ADD COLUMN estado TEXT NOT NULL DEFAULT 'pendiente'",
+      );
+      await db.execute('ALTER TABLE reservaciones ADD COLUMN tipo_evento TEXT');
+      await db.execute(
+        'ALTER TABLE reservaciones ADD COLUMN requerimientos TEXT',
       );
     }
   }

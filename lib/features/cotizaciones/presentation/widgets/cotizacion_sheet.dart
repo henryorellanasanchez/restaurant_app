@@ -5,6 +5,7 @@ import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'package:restaurant_app/core/theme/app_colors.dart';
 import 'package:restaurant_app/features/cotizaciones/presentation/providers/cotizacion_cart_provider.dart';
 import 'package:restaurant_app/features/cotizaciones/presentation/providers/cotizacion_provider.dart';
+import 'package:restaurant_app/features/cotizaciones/presentation/providers/cotizaciones_provider.dart';
 import 'package:restaurant_app/features/reservaciones/presentation/providers/reservas_provider.dart';
 
 /// Hoja inferior para crear cotizacion desde el menu publico.
@@ -57,6 +58,7 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
   Widget build(BuildContext context) {
     final cart = ref.watch(cotizacionCartProvider);
     final cotState = ref.watch(cotizacionProvider);
+    final cotizacionesAsync = ref.watch(cotizacionesProvider);
     final reservasState = ref.watch(reservasProvider);
     final reservasEnFecha = _fechaEvento == null
         ? const <String>[]
@@ -64,7 +66,22 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
               .where((r) => r.fecha == _formatDate(_fechaEvento!))
               .map((r) => r.id)
               .toList();
+    final cotizacionesPendientes = _fechaEvento == null
+        ? const <String>[]
+        : cotizacionesAsync.maybeWhen(
+            data: (items) => items
+                .where(
+                  (c) =>
+                      c.reservaLocal &&
+                      c.estado == 'pendiente' &&
+                      c.fechaEvento == _formatDate(_fechaEvento!),
+                )
+                .map((c) => c.id)
+                .toList(),
+            orElse: () => const <String>[],
+          );
     final fechaOcupada = reservasEnFecha.isNotEmpty;
+    final fechaConSolicitudPendiente = cotizacionesPendientes.isNotEmpty;
 
     return SafeArea(
       child: Padding(
@@ -79,16 +96,23 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
           children: [
             Row(
               children: [
+                IconButton(
+                  tooltip: 'Regresar',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
                 const Icon(Icons.request_quote_outlined),
                 const SizedBox(width: 8),
-                const Text(
-                  'Cotizacion para evento',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                const Expanded(
+                  child: Text(
+                    'Cotizacion para evento',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
+                TextButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: const Text('Cerrar'),
                 ),
               ],
             ),
@@ -220,9 +244,13 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
                     if (_reservaLocal && _fechaEvento != null) ...[
                       const SizedBox(height: 6),
                       _buildDisponibilidad(
-                        isLoading: reservasState.isLoading,
+                        isLoading:
+                            reservasState.isLoading ||
+                            cotizacionesAsync.isLoading,
                         ocupada: fechaOcupada,
                         total: reservasEnFecha.length,
+                        pendiente: fechaConSolicitudPendiente,
+                        totalPendientes: cotizacionesPendientes.length,
                       ),
                     ],
                     const SizedBox(height: 10),
@@ -319,6 +347,8 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
     required bool isLoading,
     required bool ocupada,
     required int total,
+    required bool pendiente,
+    required int totalPendientes,
   }) {
     if (isLoading) {
       return const Text('Verificando disponibilidad...');
@@ -329,10 +359,39 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
         style: const TextStyle(color: AppColors.error),
       );
     }
+    if (pendiente) {
+      return Text(
+        'Hay $totalPendientes cotización(es) pendiente(s) en esa fecha',
+        style: const TextStyle(color: Colors.orange),
+      );
+    }
     return const Text(
       'Fecha disponible para reservar',
       style: TextStyle(color: Colors.green),
     );
+  }
+
+  List<String> _cotizacionesPendientesEnFecha(String fechaEvento) {
+    final asyncValue = ref.read(cotizacionesProvider);
+    return asyncValue.maybeWhen(
+      data: (items) => items
+          .where(
+            (c) =>
+                c.reservaLocal &&
+                c.estado == 'pendiente' &&
+                c.fechaEvento == fechaEvento,
+          )
+          .map((c) => c.id)
+          .toList(),
+      orElse: () => const <String>[],
+    );
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildContactCard(BuildContext context) {
@@ -365,6 +424,33 @@ class _CotizacionSheetState extends ConsumerState<CotizacionSheet> {
 
     final cart = ref.read(cotizacionCartProvider);
     if (cart.items.isEmpty) return;
+
+    if (_reservaLocal && _fechaEvento != null) {
+      await ref.read(reservasProvider.notifier).loadMes(_fechaEvento!);
+      final fechaEvento = _formatDate(_fechaEvento!);
+      final reservasEnFecha = ref
+          .read(reservasProvider)
+          .reservasMes
+          .where((r) => r.fecha == fechaEvento)
+          .toList();
+      final cotizacionesPendientes = _cotizacionesPendientesEnFecha(
+        fechaEvento,
+      );
+
+      if (reservasEnFecha.isNotEmpty) {
+        _showMessage(
+          'La fecha seleccionada ya tiene reservaciones registradas. Elige otra fecha.',
+        );
+        return;
+      }
+
+      if (cotizacionesPendientes.isNotEmpty) {
+        _showMessage(
+          'Ya existe una cotización pendiente para esa fecha. Confirma disponibilidad antes de continuar.',
+        );
+        return;
+      }
+    }
 
     final id = await ref
         .read(cotizacionProvider.notifier)

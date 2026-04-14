@@ -128,6 +128,7 @@ class _SincronizacionPageState extends ConsumerState<SincronizacionPage>
       context: context,
       builder: (ctx) => _LimpiarDialog(),
     );
+    if (!mounted) return;
     if (dias != null) {
       await ref.read(syncProvider.notifier).limpiarHistorial(dias: dias);
     }

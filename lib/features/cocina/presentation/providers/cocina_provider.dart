@@ -68,19 +68,16 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
     required GetPedidosActivos getPedidosActivos,
     required UpdateEstadoPedido updateEstadoPedido,
     required UpdateEstadoItem updateEstadoItem,
-  })  : _getPedidosActivos = getPedidosActivos,
-        _updateEstadoPedido = updateEstadoPedido,
-        _updateEstadoItem = updateEstadoItem,
-        super(const CocinaState());
+  }) : _getPedidosActivos = getPedidosActivos,
+       _updateEstadoPedido = updateEstadoPedido,
+       _updateEstadoItem = updateEstadoItem,
+       super(const CocinaState());
 
   /// Inicia la pantalla de cocina y el auto-refresh.
   void start([String? restaurantId]) {
     refresh(restaurantId);
     _timer?.cancel();
-    _timer = Timer.periodic(
-      _refreshInterval,
-      (_) => refresh(restaurantId),
-    );
+    _timer = Timer.periodic(_refreshInterval, (_) => refresh(restaurantId));
   }
 
   /// Detiene el auto-refresh.
@@ -100,7 +97,8 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     final result = await _getPedidosActivos(
-        restaurantId ?? AppConstants.defaultRestaurantId);
+      restaurantId ?? AppConstants.defaultRestaurantId,
+    );
 
     result.fold(
       (failure) => state = state.copyWith(
@@ -108,19 +106,23 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
         errorMessage: failure.message,
       ),
       (pedidos) {
-        // Clasificar en columnas (excluyendo los entregados)
-        final activos =
-            pedidos.where((p) => p.estado != EstadoPedido.entregado).toList();
+        // Clasificar en columnas (excluyendo los entregados).
+        // Para cocina rápida agrupamos creado + aceptado en la misma cola.
+        final activos = pedidos
+            .where((p) => p.estado != EstadoPedido.entregado)
+            .toList();
 
         state = state.copyWith(
           isLoading: false,
           nuevos: activos
-              .where((p) => p.estado == EstadoPedido.creado)
+              .where(
+                (p) =>
+                    p.estado == EstadoPedido.creado ||
+                    p.estado == EstadoPedido.aceptado,
+              )
               .toList(),
           preparando: activos
-              .where((p) =>
-                  p.estado == EstadoPedido.aceptado ||
-                  p.estado == EstadoPedido.enPreparacion)
+              .where((p) => p.estado == EstadoPedido.enPreparacion)
               .toList(),
           listos: activos
               .where((p) => p.estado == EstadoPedido.finalizado)
@@ -148,14 +150,17 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
     );
   }
 
-  /// Alterna el estado de un item entre pendiente ↔ listo.
+  /// Alterna el estado de un item entre en preparación ↔ listo.
   ///
-  /// Útil para que el cocinero marque items individualmente.
-  Future<void> toggleEstadoItem(String itemId, EstadoPedido estadoActual,
-      String restaurantId) async {
-    final nuevoEstado = estadoActual == EstadoPedido.enPreparacion
-        ? EstadoPedido.finalizado
-        : EstadoPedido.enPreparacion;
+  /// Un toque lo marca listo; un segundo toque permite corregirlo.
+  Future<void> toggleEstadoItem(
+    String itemId,
+    EstadoPedido estadoActual,
+    String restaurantId,
+  ) async {
+    final nuevoEstado = estadoActual == EstadoPedido.finalizado
+        ? EstadoPedido.enPreparacion
+        : EstadoPedido.finalizado;
 
     final result = await _updateEstadoItem(
       UpdateEstadoItemParams(itemId: itemId, estado: nuevoEstado.value),
@@ -172,11 +177,12 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
     state = state.copyWith(errorMessage: null);
   }
 
-  /// Retorna el siguiente estado lógico para la cocina.
+  /// Retorna el siguiente estado lógico para la cocina rápida.
+  ///
+  /// Flujo simplificado: creado/aceptado → en preparación → finalizado.
   EstadoPedido? _nextEstado(EstadoPedido estado) {
     switch (estado) {
       case EstadoPedido.creado:
-        return EstadoPedido.aceptado;
       case EstadoPedido.aceptado:
         return EstadoPedido.enPreparacion;
       case EstadoPedido.enPreparacion:
@@ -189,8 +195,9 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
 }
 
 /// Provider principal de la pantalla de Cocina.
-final cocinaProvider =
-    StateNotifierProvider<CocinaNotifier, CocinaState>((ref) {
+final cocinaProvider = StateNotifierProvider<CocinaNotifier, CocinaState>((
+  ref,
+) {
   return CocinaNotifier(
     getPedidosActivos: sl<GetPedidosActivos>(),
     updateEstadoPedido: sl<UpdateEstadoPedido>(),
