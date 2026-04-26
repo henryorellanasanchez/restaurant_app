@@ -116,7 +116,13 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
   }
 
   Future<void> _pickImage() async {
+    if (_pickingImage) return;
     setState(() => _pickingImage = true);
+
+    // Permite que Flutter renderice el estado "procesando" antes de abrir
+    // el diálogo nativo del OS (en Windows, GetOpenFileName usa su propio
+    // message loop y puede interferir con el render de Flutter).
+    await Future<void>.delayed(const Duration(milliseconds: 80));
 
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -125,7 +131,8 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
         withData: true,
       );
 
-      if (!mounted || result == null || result.files.isEmpty) return;
+      if (!mounted) return;
+      if (result == null || result.files.isEmpty) return;
 
       final file = result.files.single;
       final bytes = file.bytes;
@@ -143,6 +150,9 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
         _processImageIsolate,
         _ImageInput(bytes: bytes, extension: ext),
       );
+
+      if (!mounted) return;
+
       final imageBytes = optimized?.bytes ?? bytes;
       final mimeType =
           optimized?.mimeType ??
@@ -155,12 +165,11 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
 
       _selectedImageData = 'data:$mimeType;base64,${base64Encode(imageBytes)}';
       _imagenUrlCtrl.clear();
-      if (mounted) setState(() {});
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo cargar la foto de referencia'),
+          content: Text('No se pudo cargar la foto. Intenta con otra imagen.'),
         ),
       );
     } finally {
@@ -212,10 +221,46 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
           height: 160,
           width: double.infinity,
           fit: BoxFit.cover,
-          cacheWidth: _previewCacheWidth,
           filterQuality: FilterQuality.low,
-          errorBuilder: (_, __, ___) =>
-              _buildImagePlaceholder(cs, message: 'No se pudo cargar la URL'),
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              height: 160,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Cargando imagen...',
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+          errorBuilder: (_, __, ___) => _buildImagePlaceholder(
+            cs,
+            message:
+                'No se pudo cargar la URL.\n'
+                'En web, algunas imágenes bloquean\n'
+                'el acceso externo (CORS).\n'
+                'Usa el botón "Seleccionar foto".',
+          ),
         ),
       );
     }
@@ -313,300 +358,340 @@ class _ProductoFormDialogState extends State<ProductoFormDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Altura segura: clamp evita que MediaQuery devuelva 0 brevemente
+    // cuando el OS dialog (FilePicker en Windows) interrumpe el render.
+    final safeMaxHeight = (MediaQuery.sizeOf(context).height * 0.80).clamp(
+      420.0,
+      700.0,
+    );
+
     return AlertDialog(
       title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      content: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 500,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.80,
-        ),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // ── Nombre ──────────────────────────────────────
-                TextFormField(
-                  controller: _nombreCtrl,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre *',
-                    hintText: 'Ej: Hamburguesa Clásica',
-                    prefixIcon: Icon(Icons.fastfood_outlined),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'El nombre es obligatorio';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // ── Descripción ──────────────────────────────────
-                TextFormField(
-                  controller: _descripcionCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción',
-                    hintText: 'Ingredientes, alérgenos, etc. (opcional)',
-                    prefixIcon: Icon(Icons.notes_outlined),
-                    alignLabelWithHint: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // ── Foto de referencia ───────────────────────────
-                Text(
-                  'Foto de referencia (opcional)',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _buildImagePreview(theme.colorScheme),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _imagenUrlCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'URL de la foto',
-                    hintText:
-                        'Pega un enlace o usa el botón para elegir una imagen',
-                    prefixIcon: Icon(Icons.link_outlined),
-                    alignLabelWithHint: true,
-                  ),
-                  onChanged: (_) {
-                    if (_selectedImageData != null) {
-                      _selectedImageData = null;
-                    }
-                    setState(() {});
-                  },
-                ),
-                if (_selectedImageData != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Imagen seleccionada desde el dispositivo.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+      content: SizedBox(
+        width: 500,
+        height: safeMaxHeight,
+        child: Stack(
+          children: [
+            Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _pickingImage ? null : _pickImage,
-                      icon: Icon(
-                        _pickingImage
-                            ? Icons.hourglass_top
-                            : Icons.photo_library_outlined,
+                    // ── Nombre ──────────────────────────────────────
+                    TextFormField(
+                      controller: _nombreCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre *',
+                        hintText: 'Ej: Hamburguesa Clásica',
+                        prefixIcon: Icon(Icons.fastfood_outlined),
                       ),
-                      label: Text(
-                        _pickingImage
-                            ? 'Cargando...'
-                            : (_imageValue.isEmpty
-                                  ? 'Seleccionar foto'
-                                  : 'Cambiar foto'),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'El nombre es obligatorio';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Descripción ──────────────────────────────────
+                    TextFormField(
+                      controller: _descripcionCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Descripción',
+                        hintText: 'Ingredientes, alérgenos, etc. (opcional)',
+                        prefixIcon: Icon(Icons.notes_outlined),
+                        alignLabelWithHint: true,
                       ),
                     ),
-                    if (_imageValue.isNotEmpty)
-                      TextButton.icon(
-                        onPressed: () {
-                          _selectedImageData = null;
-                          _imagenUrlCtrl.clear();
-                          setState(() {});
-                        },
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text('Quitar foto'),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                // ── Precio + Categoría ───────────────────────────
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _precioCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Precio *',
-                          prefixText: '\$ ',
-                          hintText: '0.00',
-                          prefixIcon: Icon(Icons.attach_money),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) {
-                            return 'Requerido';
-                          }
-                          final parsed = double.tryParse(v.trim());
-                          if (parsed == null || parsed < 0) {
-                            return 'Precio inválido';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _categoriaId.isEmpty ? null : _categoriaId,
-                        decoration: const InputDecoration(
-                          labelText: 'Categoría *',
-                          prefixIcon: Icon(Icons.category_outlined),
-                        ),
-                        items: widget.categorias
-                            .map(
-                              (c) => DropdownMenuItem(
-                                value: c.id,
-                                child: Text(c.nombre),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) {
-                          if (v != null) {
-                            setState(() => _categoriaId = v);
-                          }
-                        },
-                        validator: (v) => (v == null || v.isEmpty)
-                            ? 'Selecciona una categoría'
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // ── Disponible ───────────────────────────────────
-                SwitchListTile.adaptive(
-                  title: const Text('Disponible ahora'),
-                  subtitle: Text(
-                    _disponible
-                        ? 'Visible para los pedidos'
-                        : 'No se puede pedir',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  value: _disponible,
-                  onChanged: (v) => setState(() => _disponible = v),
-                  contentPadding: EdgeInsets.zero,
-                ),
-
-                const Divider(height: 24),
-
-                // ── Variantes ────────────────────────────────────
-                Row(
-                  children: [
+                    // ── Foto de referencia ───────────────────────────
                     Text(
-                      'Variantes (opcional)',
+                      'Foto de referencia (opcional)',
                       style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: _addVariante,
-                      icon: const Icon(Icons.add, size: 16),
-                      label: const Text('Añadir'),
+                    const SizedBox(height: 8),
+                    _buildImagePreview(theme.colorScheme),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _imagenUrlCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'URL de la foto',
+                        hintText:
+                            'Pega un enlace o usa el botón para elegir una imagen',
+                        prefixIcon: Icon(Icons.link_outlined),
+                        alignLabelWithHint: true,
+                      ),
+                      onChanged: (_) {
+                        if (_selectedImageData != null) {
+                          _selectedImageData = null;
+                        }
+                        setState(() {});
+                      },
                     ),
+                    if (_selectedImageData != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Imagen seleccionada desde el dispositivo.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickingImage ? null : _pickImage,
+                          icon: Icon(
+                            _pickingImage
+                                ? Icons.hourglass_top
+                                : Icons.photo_library_outlined,
+                          ),
+                          label: Text(
+                            _pickingImage
+                                ? 'Cargando...'
+                                : (_imageValue.isEmpty
+                                      ? 'Seleccionar foto'
+                                      : 'Cambiar foto'),
+                          ),
+                        ),
+                        if (_imageValue.isNotEmpty)
+                          TextButton.icon(
+                            onPressed: () {
+                              _selectedImageData = null;
+                              _imagenUrlCtrl.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Quitar foto'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Precio + Categoría ───────────────────────────
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _precioCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Precio *',
+                              prefixText: '\$ ',
+                              hintText: '0.00',
+                              prefixIcon: Icon(Icons.attach_money),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'Requerido';
+                              }
+                              final parsed = double.tryParse(v.trim());
+                              if (parsed == null || parsed < 0) {
+                                return 'Precio inválido';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _categoriaId.isEmpty ? null : _categoriaId,
+                            decoration: const InputDecoration(
+                              labelText: 'Categoría *',
+                              prefixIcon: Icon(Icons.category_outlined),
+                            ),
+                            items: widget.categorias
+                                .map(
+                                  (c) => DropdownMenuItem(
+                                    value: c.id,
+                                    child: Text(c.nombre),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) {
+                              if (v != null) {
+                                setState(() => _categoriaId = v);
+                              }
+                            },
+                            validator: (v) => (v == null || v.isEmpty)
+                                ? 'Selecciona una categoría'
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Disponible ───────────────────────────────────
+                    SwitchListTile.adaptive(
+                      title: const Text('Disponible ahora'),
+                      subtitle: Text(
+                        _disponible
+                            ? 'Visible para los pedidos'
+                            : 'No se puede pedir',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      value: _disponible,
+                      onChanged: (v) => setState(() => _disponible = v),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+
+                    const Divider(height: 24),
+
+                    // ── Variantes ────────────────────────────────────
+                    Row(
+                      children: [
+                        Text(
+                          'Variantes (opcional)',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: _addVariante,
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Añadir'),
+                        ),
+                      ],
+                    ),
+                    if (_variantes.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'Sin variantes — el precio base aplica para todos.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: [
+                          for (int i = 0; i < _variantes.length; i++)
+                            Builder(
+                              key: ValueKey(_variantes[i].id ?? i),
+                              builder: (_) {
+                                final v = _variantes[i];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: TextFormField(
+                                          controller: v.nombreCtrl,
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                'Nombre variante ${i + 1}',
+                                            hintText: 'Ej: Grande',
+                                            isDense: true,
+                                          ),
+                                          validator: (val) {
+                                            if (val == null ||
+                                                val.trim().isEmpty) {
+                                              return 'Requerido';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        flex: 2,
+                                        child: TextFormField(
+                                          controller: v.precioCtrl,
+                                          keyboardType:
+                                              const TextInputType.numberWithOptions(
+                                                decimal: true,
+                                              ),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Precio',
+                                            prefixText: '\$ ',
+                                            isDense: true,
+                                          ),
+                                          validator: (val) {
+                                            if (val == null ||
+                                                val.trim().isEmpty) {
+                                              return 'Requerido';
+                                            }
+                                            final p = double.tryParse(
+                                              val.trim(),
+                                            );
+                                            if (p == null || p < 0) {
+                                              return 'Inválido';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close, size: 18),
+                                        color: theme.colorScheme.error,
+                                        onPressed: () => _removeVariante(i),
+                                        tooltip: 'Eliminar variante',
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
                   ],
                 ),
-                if (_variantes.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'Sin variantes — el precio base aplica para todos.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                else
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _variantes.length,
-                    itemBuilder: (_, i) {
-                      final v = _variantes[i];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: TextFormField(
-                                controller: v.nombreCtrl,
-                                decoration: InputDecoration(
-                                  labelText: 'Nombre variante ${i + 1}',
-                                  hintText: 'Ej: Grande',
-                                  isDense: true,
-                                ),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) {
-                                    return 'Requerido';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
-                                controller: v.precioCtrl,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Precio',
-                                  prefixText: '\$ ',
-                                  isDense: true,
-                                ),
-                                validator: (val) {
-                                  if (val == null || val.trim().isEmpty) {
-                                    return 'Requerido';
-                                  }
-                                  final p = double.tryParse(val.trim());
-                                  if (p == null || p < 0) {
-                                    return 'Inválido';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              color: theme.colorScheme.error,
-                              onPressed: () => _removeVariante(i),
-                              tooltip: 'Eliminar variante',
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-              ],
+              ),
             ),
-          ),
+            // ── Overlay de carga durante selección de imagen ──────
+            if (_pickingImage)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Procesando imagen...',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
       actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _pickingImage ? null : () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: _submit,
+          onPressed: _pickingImage ? null : _submit,
           child: Text(_isEditing ? 'Guardar' : 'Crear'),
         ),
       ],

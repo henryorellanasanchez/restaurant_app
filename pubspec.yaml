@@ -1,7 +1,7 @@
 name: restaurant_app
 description: "Sistema de Gestión para Restaurantes - Base Comercial Escalable"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.8.1
@@ -57,8 +57,21 @@ dependencies:
   # QR
   qr_flutter: ^4.1.0
 
+  # Mapa interactivo (OpenStreetMap, sin API key)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+
+  # Google Sign-In + Drive backup
+  google_sign_in: ^6.2.2
+  googleapis: ^13.2.0
+  googleapis_auth: ^1.6.0
+  path_provider: ^2.1.5
+
   # Enlaces externos (WhatsApp, llamadas)
   url_launcher: ^6.3.0
+
+  # Íconos de redes sociales (WhatsApp, Facebook, etc.)
+  font_awesome_flutter: ^10.8.0
 
   # Calendario
   table_calendar: ^3.1.2
@@ -66,6 +79,11 @@ dependencies:
   # Selección de archivos/imágenes
   file_picker: ^8.0.7
   image: ^4.5.4
+
+  # Hashing seguro de PINs
+  crypto: ^3.0.6
+  firebase_core: ^4.7.0
+  cloud_firestore: ^6.3.0
 
 dev_dependencies:
   flutter_test:

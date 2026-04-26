@@ -29,8 +29,9 @@ enum EstadoMesa {
 
 /// Estados posibles de un pedido.
 ///
-/// Flujo: creado → aceptado → en_preparacion → finalizado → entregado
+/// Flujo: pendiente_aprobacion → creado → aceptado → en_preparacion → finalizado → entregado
 enum EstadoPedido {
+  pendienteAprobacion('pendiente_aprobacion', 'Pendiente aprobación'),
   creado('creado', 'Creado'),
   aceptado('aceptado', 'Aceptado'),
   enPreparacion('en_preparacion', 'En Preparación'),
@@ -50,9 +51,10 @@ enum EstadoPedido {
   }
 
   /// Verifica si el pedido puede ser editado.
-  /// Solo se puede editar en estado 'creado' o 'aceptado'.
   bool get esEditable =>
-      this == EstadoPedido.creado || this == EstadoPedido.aceptado;
+      this == EstadoPedido.pendienteAprobacion ||
+      this == EstadoPedido.creado ||
+      this == EstadoPedido.aceptado;
 
   /// Verifica si el pedido está activo (no entregado).
   bool get esActivo => this != EstadoPedido.entregado;
@@ -177,6 +179,10 @@ enum RolUsuario {
 
   /// Puede administrar usuarios.
   bool get puedeGestionarUsuarios => esAdmin;
+
+  /// Puede gestionar el directorio de clientes.
+  bool get puedeGestionarClientes =>
+      this == RolUsuario.administrador || this == RolUsuario.cajero;
 
   /// Puede operar sincronización y tareas sensibles.
   bool get puedeSincronizar => esAdmin;

@@ -38,6 +38,10 @@ class PedidosState {
   }
 
   /// Pedidos filtrados por estado.
+  List<Pedido> get pedidosPendientesAprobacion => pedidos
+      .where((p) => p.estado == EstadoPedido.pendienteAprobacion)
+      .toList();
+
   List<Pedido> get pedidosCreados =>
       pedidos.where((p) => p.estado == EstadoPedido.creado).toList();
 
@@ -57,6 +61,7 @@ class PedidosState {
   /// Contadores para dashboard.
   int get totalPedidos => pedidos.length;
   int get totalActivos => pedidosActivos.length;
+  int get totalPendientesAprobacion => pedidosPendientesAprobacion.length;
   int get totalCreados => pedidosCreados.length;
   int get totalEnPreparacion => pedidosEnPreparacion.length;
 }
@@ -263,6 +268,14 @@ class PedidosNotifier extends StateNotifier<PedidosState> {
   void clearError() {
     state = state.copyWith(errorMessage: null);
   }
+
+  /// Aprueba un pedido pendiente de aprobación → pasa a [EstadoPedido.creado].
+  Future<bool> aprobarPedido(String id, [String? restaurantId]) =>
+      cambiarEstado(id, EstadoPedido.creado, restaurantId);
+
+  /// Rechaza un pedido pendiente de aprobación → lo elimina.
+  Future<bool> rechazarPedido(String id, [String? restaurantId]) =>
+      eliminarPedido(id, restaurantId);
 }
 
 /// Provider principal de Pedidos.

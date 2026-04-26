@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:restaurant_app/config/routes/app_router.dart';
+import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'package:restaurant_app/core/theme/app_colors.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/cotizaciones/domain/entities/cotizacion.dart';
@@ -74,6 +77,8 @@ class _ReservasPublicPageState extends ConsumerState<ReservasPublicPage> {
 
           return Column(
             children: [
+              // ── Banner instructivo ─────────────────────────────
+              _InstructivoBanner(selectedDay: _selectedDay),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
                 child: Container(
@@ -103,15 +108,27 @@ class _ReservasPublicPageState extends ConsumerState<ReservasPublicPage> {
                         ),
                         const SizedBox(height: 2),
                         const Text(
-                          'Minimalista y fácil de leer.',
+                          'Revisa disponibilidad por fecha y estado del local.',
                           style: TextStyle(color: AppColors.textSecondary),
                         ),
                         const SizedBox(height: 10),
                         TableCalendar(
                           locale: 'es_ES',
-                          firstDay: DateTime.utc(2020, 1, 1),
+                          firstDay: DateTime(
+                            DateTime.now().year,
+                            DateTime.now().month,
+                            DateTime.now().day,
+                          ),
                           lastDay: DateTime.utc(2035, 12, 31),
                           focusedDay: _focusedDay,
+                          enabledDayPredicate: (day) {
+                            final today = DateTime(
+                              DateTime.now().year,
+                              DateTime.now().month,
+                              DateTime.now().day,
+                            );
+                            return !day.isBefore(today);
+                          },
                           selectedDayPredicate: (day) =>
                               isSameDay(day, _selectedDay),
                           startingDayOfWeek: StartingDayOfWeek.monday,
@@ -382,26 +399,40 @@ class _ReservasPublicPageState extends ConsumerState<ReservasPublicPage> {
                 style: const TextStyle(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ResumenDisponibilidadCard(
-                      title: 'Disponibles',
-                      value: '$disponibles',
-                      icon: Icons.event_seat_outlined,
-                      color: Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _ResumenDisponibilidadCard(
-                      title: 'Reservadas',
-                      value: '${reservedMesaIds.length}',
-                      icon: Icons.lock_outline_rounded,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isCompact = constraints.maxWidth < 360;
+                  final cardDisponibles = _ResumenDisponibilidadCard(
+                    title: 'Disponibles',
+                    value: '$disponibles',
+                    icon: Icons.event_seat_outlined,
+                    color: Colors.green,
+                  );
+                  final cardReservadas = _ResumenDisponibilidadCard(
+                    title: 'Reservadas',
+                    value: '${reservedMesaIds.length}',
+                    icon: Icons.lock_outline_rounded,
+                    color: AppColors.primary,
+                  );
+
+                  if (isCompact) {
+                    return Column(
+                      children: [
+                        cardDisponibles,
+                        const SizedBox(height: 10),
+                        cardReservadas,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: cardDisponibles),
+                      const SizedBox(width: 10),
+                      Expanded(child: cardReservadas),
+                    ],
+                  );
+                },
               ),
               if (cotizacionesPendientes.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -421,6 +452,14 @@ class _ReservasPublicPageState extends ConsumerState<ReservasPublicPage> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        // ── Botón CTA reservar ─────────────────────────────────
+        _ReservarCTAButton(
+          selectedDay: _selectedDay,
+          disponibles: disponibles,
+          estado: estado,
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -493,6 +532,307 @@ class _ResumenDisponibilidadCard extends StatelessWidget {
           ),
           Text(title, style: const TextStyle(fontSize: 12)),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Banner con instrucciones para reservar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InstructivoBanner extends StatelessWidget {
+  final DateTime selectedDay;
+
+  const _InstructivoBanner({required this.selectedDay});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.07),
+        border: Border(
+          bottom: BorderSide(color: AppColors.primary.withValues(alpha: 0.15)),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 18,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Cómo hacer una reserva',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                    fontSize: 13,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '1. Elige una fecha disponible en el calendario.\n'
+                  '2. Revisa las mesas disponibles abajo.\n'
+                  '3. Toca "Reservar esta fecha" y contáctanos por WhatsApp o teléfono.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Botón CTA para solicitar la reserva
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ReservarCTAButton extends ConsumerWidget {
+  final DateTime selectedDay;
+  final int disponibles;
+  final _EstadoDiaCalendario estado;
+
+  const _ReservarCTAButton({
+    required this.selectedDay,
+    required this.disponibles,
+    required this.estado,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final today = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+    );
+    final selectedNormalized = DateTime(
+      selectedDay.year,
+      selectedDay.month,
+      selectedDay.day,
+    );
+    final isPasado = selectedNormalized.isBefore(today);
+    final isOcupado = estado == _EstadoDiaCalendario.ocupado;
+    final isDisabled = isOcupado || isPasado;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: isDisabled ? Colors.grey : AppColors.primary,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          onPressed: isDisabled ? null : () => _mostrarContacto(context, ref),
+          icon: Icon(
+            isPasado
+                ? Icons.history_rounded
+                : isOcupado
+                ? Icons.event_busy_rounded
+                : Icons.calendar_month_rounded,
+            size: 20,
+          ),
+          label: Text(
+            isPasado
+                ? 'Fecha en el pasado'
+                : isOcupado
+                ? 'Fecha no disponible'
+                : 'Reservar esta fecha',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _mostrarContacto(BuildContext context, WidgetRef ref) {
+    // Usar datos de contacto desde AppConstants (siempre disponibles)
+    final telefono = AppConstants.contactPhone;
+    final whatsapp = AppConstants.contactWhatsapp.replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
+    final fechaLabel = DateFormat(
+      "EEEE d 'de' MMMM",
+      'es_ES',
+    ).format(selectedDay);
+    final mensaje = Uri.encodeComponent(
+      'Hola! Quisiera reservar una mesa para el $fechaLabel. ¿Tienen disponibilidad?',
+    );
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reservar para el $fechaLabel',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Contáctanos para confirmar tu mesa. '
+              'Nuestro equipo te atenderá de inmediato.',
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            // WhatsApp
+            if (whatsapp.isNotEmpty)
+              _ContactButton(
+                iconWidget: const FaIcon(
+                  FontAwesomeIcons.whatsapp,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                color: const Color(0xFF25D366),
+                label: 'WhatsApp',
+                subtitle: telefono,
+                onTap: () async {
+                  final uri = Uri.parse(
+                    'https://wa.me/593${whatsapp.replaceFirst(RegExp(r'^0'), '')}?text=$mensaje',
+                  );
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            const SizedBox(height: 10),
+            // Llamada
+            if (telefono.isNotEmpty)
+              _ContactButton(
+                icon: Icons.phone_rounded,
+                color: AppColors.primary,
+                label: 'Llamar',
+                subtitle: telefono,
+                onTap: () async {
+                  final uri = Uri.parse('tel:${telefono.replaceAll(' ', '')}');
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.lightbulb_outline,
+                    size: 16,
+                    color: Colors.amber,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Indica el número de personas y tu nombre al contactarnos para agilizar tu reserva.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactButton extends StatelessWidget {
+  final IconData? icon;
+  final Widget? iconWidget;
+  final Color color;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ContactButton({
+    this.icon,
+    this.iconWidget,
+    required this.color,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child:
+                  iconWidget ??
+                  Icon(
+                    icon ?? Icons.phone_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Icon(Icons.chevron_right_rounded, color: color),
+          ],
+        ),
       ),
     );
   }

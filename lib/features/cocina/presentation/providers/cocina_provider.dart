@@ -182,6 +182,7 @@ class CocinaNotifier extends StateNotifier<CocinaState> {
   /// Flujo simplificado: creado/aceptado → en preparación → finalizado.
   EstadoPedido? _nextEstado(EstadoPedido estado) {
     switch (estado) {
+      case EstadoPedido.pendienteAprobacion:
       case EstadoPedido.creado:
       case EstadoPedido.aceptado:
         return EstadoPedido.enPreparacion;

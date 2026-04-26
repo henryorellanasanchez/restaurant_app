@@ -248,6 +248,45 @@ class _MesasPageState extends ConsumerState<MesasPage> {
         ? state.mesas
         : state.mesas.where((m) => m.estado == _filtroEstado).toList();
 
+    if (mesasFiltradas.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () async {
+          await ref.read(mesasProvider.notifier).loadMesas();
+          await ref.read(llamadosProvider.notifier).loadPendientes();
+        },
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 96, 24, 120),
+          children: const [
+            Icon(
+              Icons.filter_alt_off_rounded,
+              size: 56,
+              color: AppColors.textHint,
+            ),
+            SizedBox(height: 14),
+            Center(
+              child: Text(
+                'No hay mesas con este filtro',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            SizedBox(height: 6),
+            Center(
+              child: Text(
+                'Prueba otro estado o actualiza para recargar.',
+                style: TextStyle(color: AppColors.textHint),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: LayoutBuilder(
@@ -271,6 +310,7 @@ class _MesasPageState extends ConsumerState<MesasPage> {
             },
             child: GridView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 96),
               gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: maxExtent,
                 crossAxisSpacing: 12,
@@ -360,14 +400,18 @@ class _MesasPageState extends ConsumerState<MesasPage> {
                       size: 28,
                     ),
                     const SizedBox(width: 12),
-                    Text(
-                      mesa.displayName,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                    Expanded(
+                      child: Text(
+                        mesa.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -522,42 +566,51 @@ class _MesasPageState extends ConsumerState<MesasPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(
-                leading: Icon(Icons.campaign_rounded),
-                title: Text('Llamados a mesero'),
-              ),
-              const Divider(),
-              if (state.pendientes.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('No hay llamados pendientes.'),
-                ),
-              if (state.pendientes.isNotEmpty)
-                ...state.pendientes.map(
-                  (l) => ListTile(
-                    leading: const Icon(Icons.table_restaurant_rounded),
-                    title: Text(l.mesaNombre ?? l.mesaId ?? 'Mesa'),
-                    subtitle: Text('Solicitado: ${_formatHora(l.createdAt)}'),
-                    trailing: TextButton(
-                      onPressed: () async {
-                        await ref
-                            .read(llamadosProvider.notifier)
-                            .marcarAtendido(
-                              l.id,
-                              AppConstants.defaultRestaurantId,
-                            );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('Atender'),
-                    ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.72,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ListTile(
+                    leading: Icon(Icons.campaign_rounded),
+                    title: Text('Llamados a mesero'),
                   ),
-                ),
-            ],
+                  const Divider(),
+                  if (state.pendientes.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('No hay llamados pendientes.'),
+                    ),
+                  if (state.pendientes.isNotEmpty)
+                    ...state.pendientes.map(
+                      (l) => ListTile(
+                        leading: const Icon(Icons.table_restaurant_rounded),
+                        title: Text(l.mesaNombre ?? l.mesaId ?? 'Mesa'),
+                        subtitle: Text(
+                          'Solicitado: ${_formatHora(l.createdAt)}',
+                        ),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            await ref
+                                .read(llamadosProvider.notifier)
+                                .marcarAtendido(
+                                  l.id,
+                                  AppConstants.defaultRestaurantId,
+                                );
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          },
+                          child: const Text('Atender'),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -611,18 +664,28 @@ class _MesasPageState extends ConsumerState<MesasPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Reservar ${mesa.displayName}'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Nombre de la reserva',
-              hintText: 'Ej: Familia García',
-              prefixIcon: Icon(Icons.person_rounded),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.80,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: TextFormField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre de la reserva',
+                  hintText: 'Ej: Familia García',
+                  prefixIcon: Icon(Icons.person_rounded),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Ingresa un nombre'
+                    : null,
+              ),
             ),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Ingresa un nombre' : null,
           ),
         ),
         actions: [
@@ -668,18 +731,28 @@ class _MesasPageState extends ConsumerState<MesasPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Reservar todo el local'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Nombre del grupo o institución',
-              hintText: 'Ej: Corporación ACME',
-              prefixIcon: Icon(Icons.groups_rounded),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.80,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: TextFormField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del grupo o institución',
+                  hintText: 'Ej: Corporación ACME',
+                  prefixIcon: Icon(Icons.groups_rounded),
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Ingresa un nombre'
+                    : null,
+              ),
             ),
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Ingresa un nombre' : null,
           ),
         ),
         actions: [

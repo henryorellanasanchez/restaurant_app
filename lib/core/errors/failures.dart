@@ -29,6 +29,11 @@ class CacheFailure extends Failure {
   const CacheFailure({required super.message, super.code});
 }
 
+/// Error de regla de negocio (validación, duplicados, etc.).
+class BusinessFailure extends Failure {
+  const BusinessFailure({required super.message, super.code});
+}
+
 /// Error de validación de datos.
 class ValidationFailure extends Failure {
   const ValidationFailure({required super.message, super.code});

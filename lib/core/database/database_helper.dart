@@ -4,6 +4,7 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import 'package:restaurant_app/core/constants/app_constants.dart';
 import 'package:restaurant_app/core/database/database_tables.dart';
+import 'package:restaurant_app/core/utils/pin_hasher.dart';
 import 'package:restaurant_app/services/database_location_service.dart';
 
 /// Helper singleton para gestionar la base de datos SQLite.
@@ -118,7 +119,7 @@ class DatabaseHelper {
     await _insertSeedUsers(db, now);
   }
 
-  /// Inserta usuarios de prueba con PINs conocidos.
+  /// Inserta usuarios de prueba con PINs hasheados.
   Future<void> _insertSeedUsers(Database db, String now) async {
     final users = [
       ('usr_admin_01', 'Administrador', 'administrador', '1111'),
@@ -131,7 +132,7 @@ class DatabaseHelper {
         'id': id,
         'restaurant_id': AppConstants.defaultRestaurantId,
         'nombre': nombre,
-        'pin': pin,
+        'pin': PinHasher.hash(pin), // nunca guardar en texto plano
         'rol': rol,
         'activo': 1,
         'created_at': now,
@@ -281,6 +282,121 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE reservaciones ADD COLUMN tipo_evento TEXT');
       await db.execute(
         'ALTER TABLE reservaciones ADD COLUMN requerimientos TEXT',
+      );
+    }
+    if (oldVersion < 13) {
+      // v13: campos de texto editables en public_config
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN exp1_titulo TEXT NOT NULL DEFAULT 'Gastronomía Auténtica'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN exp1_desc TEXT NOT NULL DEFAULT 'Recetas tradicionales elaboradas con ingredientes frescos de temporada.'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN exp2_titulo TEXT NOT NULL DEFAULT 'Ambiente Familiar'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN exp2_desc TEXT NOT NULL DEFAULT 'Un espacio cálido y acogedor ideal para toda ocasión especial.'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN exp3_titulo TEXT NOT NULL DEFAULT 'Servicio Excepcional'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN exp3_desc TEXT NOT NULL DEFAULT 'Atención personalizada que supera las expectativas de cada visita.'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN titulo_menu TEXT NOT NULL DEFAULT 'Nuestro Menú'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN subtitulo_menu TEXT NOT NULL DEFAULT 'Platos elaborados con ingredientes frescos de temporada'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN titulo_reservas TEXT NOT NULL DEFAULT 'Reserva tu Mesa'",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN subtitulo_reservas TEXT NOT NULL DEFAULT 'Asegura tu lugar para una experiencia gastronómica especial'",
+      );
+    }
+
+    if (oldVersion < 16) {
+      // v16: hashear PINs de usuarios que están en texto plano
+      final users = await db.query('usuarios', columns: ['id', 'pin']);
+      for (final user in users) {
+        final pin = user['pin'] as String?;
+        if (pin != null && !PinHasher.isHashed(pin)) {
+          await db.update(
+            'usuarios',
+            {'pin': PinHasher.hash(pin)},
+            where: 'id = ?',
+            whereArgs: [user['id']],
+          );
+        }
+      }
+    }
+    if (oldVersion < 15) {
+      // v15: tabla de clientes con cédula como PK
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS clientes (
+          cedula TEXT PRIMARY KEY,
+          restaurant_id TEXT NOT NULL,
+          nombre TEXT NOT NULL,
+          apellido TEXT,
+          telefono TEXT,
+          email TEXT,
+          direccion TEXT,
+          fecha_nacimiento TEXT,
+          notas TEXT,
+          activo INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (restaurant_id) REFERENCES restaurantes(id)
+        )
+      ''');
+    }
+    if (oldVersion < 14) {
+      // v14: mapa de ubicación en public_config
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN map_url TEXT NOT NULL DEFAULT 'https://maps.app.goo.gl/KL4cFAxBxDDKmgaS9'",
+      );
+      await db.execute(
+        'ALTER TABLE public_config ADD COLUMN map_lat REAL NOT NULL DEFAULT -2.9721229',
+      );
+      await db.execute(
+        'ALTER TABLE public_config ADD COLUMN map_lng REAL NOT NULL DEFAULT -78.437791',
+      );
+    }
+
+    if (oldVersion < 17) {
+      // v17a: campos de mantelería y precio en reservaciones
+      await db.execute(
+        'ALTER TABLE reservaciones ADD COLUMN nombre_local_evento TEXT',
+      );
+      await db.execute('ALTER TABLE reservaciones ADD COLUMN manteles TEXT');
+      await db.execute(
+        'ALTER TABLE reservaciones ADD COLUMN color_manteleria TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE reservaciones ADD COLUMN precio_estimado REAL',
+      );
+
+      // v17b: datos corporativos en public_config
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN nombre_negocio TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN propietario TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN email_contacto TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN email_secundario TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN telefono_secundario TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE public_config ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''",
       );
     }
   }

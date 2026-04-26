@@ -43,9 +43,7 @@ class _MesaFormDialogState extends State<MesaFormDialog> {
           ? widget.mesa!.numero.toString()
           : widget.nextNumero.toString(),
     );
-    _nombreController = TextEditingController(
-      text: widget.mesa?.nombre ?? '',
-    );
+    _nombreController = TextEditingController(text: widget.mesa?.nombre ?? '');
     _capacidadController = TextEditingController(
       text: (widget.mesa?.capacidad ?? 4).toString(),
     );
@@ -64,96 +62,102 @@ class _MesaFormDialogState extends State<MesaFormDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(isEditing ? 'Editar Mesa' : 'Nueva Mesa'),
-      content: SizedBox(
-        width: 400,
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Número de mesa ──────────────────────────────
-              TextFormField(
-                controller: _numeroController,
-                decoration: const InputDecoration(
-                  labelText: 'Número de mesa *',
-                  prefixIcon: Icon(Icons.tag_rounded),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.80,
+        ),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Número de mesa ──────────────────────────────
+                TextFormField(
+                  controller: _numeroController,
+                  decoration: const InputDecoration(
+                    labelText: 'Número de mesa *',
+                    prefixIcon: Icon(Icons.tag_rounded),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Ingrese el número';
+                    }
+                    if (int.tryParse(value) == null) {
+                      return 'Debe ser un número válido';
+                    }
+                    return null;
+                  },
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Ingrese el número';
-                  }
-                  if (int.tryParse(value) == null) {
-                    return 'Debe ser un número válido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // ── Nombre (opcional) ───────────────────────────
-              TextFormField(
-                controller: _nombreController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre (opcional)',
-                  prefixIcon: Icon(Icons.label_rounded),
-                  hintText: 'Ej: Terraza 1, VIP',
+                // ── Nombre (opcional) ───────────────────────────
+                TextFormField(
+                  controller: _nombreController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre (opcional)',
+                    prefixIcon: Icon(Icons.label_rounded),
+                    hintText: 'Ej: Terraza 1, VIP',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // ── Capacidad ───────────────────────────────────
-              TextFormField(
-                controller: _capacidadController,
-                decoration: const InputDecoration(
-                  labelText: 'Capacidad (personas) *',
-                  prefixIcon: Icon(Icons.people_rounded),
+                // ── Capacidad ───────────────────────────────────
+                TextFormField(
+                  controller: _capacidadController,
+                  decoration: const InputDecoration(
+                    labelText: 'Capacidad (personas) *',
+                    prefixIcon: Icon(Icons.people_rounded),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Ingrese la capacidad';
+                    }
+                    final num = int.tryParse(value);
+                    if (num == null || num < 1) {
+                      return 'Mínimo 1 persona';
+                    }
+                    return null;
+                  },
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Ingrese la capacidad';
-                  }
-                  final num = int.tryParse(value);
-                  if (num == null || num < 1) {
-                    return 'Mínimo 1 persona';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // ── Estado ──────────────────────────────────────
-              DropdownButtonFormField<EstadoMesa>(
-                value: _estado,
-                decoration: const InputDecoration(
-                  labelText: 'Estado',
-                  prefixIcon: Icon(Icons.circle_rounded),
-                ),
-                items: EstadoMesa.values.map((estado) {
-                  return DropdownMenuItem(
-                    value: estado,
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: _getColorByEstado(estado),
-                            shape: BoxShape.circle,
+                // ── Estado ──────────────────────────────────────
+                DropdownButtonFormField<EstadoMesa>(
+                  value: _estado,
+                  decoration: const InputDecoration(
+                    labelText: 'Estado',
+                    prefixIcon: Icon(Icons.circle_rounded),
+                  ),
+                  items: EstadoMesa.values.map((estado) {
+                    return DropdownMenuItem(
+                      value: estado,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: _getColorByEstado(estado),
+                              shape: BoxShape.circle,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(estado.label),
-                      ],
-                    ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) setState(() => _estado = value);
-                },
-              ),
-            ],
+                          const SizedBox(width: 8),
+                          Text(estado.label),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _estado = value);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),

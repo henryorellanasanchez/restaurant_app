@@ -9,11 +9,13 @@ class UsuarioCard extends StatelessWidget {
     required this.usuario,
     required this.onEdit,
     required this.onDelete,
+    this.canDelete = true,
   });
 
   final Usuario usuario;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final bool canDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -69,9 +71,13 @@ class UsuarioCard extends StatelessWidget {
                 children: [
                   Icon(Icons.email_rounded, size: 13, color: colors.outline),
                   const SizedBox(width: 4),
-                  Text(
-                    usuario.email!,
-                    style: TextStyle(fontSize: 12, color: colors.outline),
+                  Expanded(
+                    child: Text(
+                      usuario.email!,
+                      style: TextStyle(fontSize: 12, color: colors.outline),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -104,9 +110,14 @@ class UsuarioCard extends StatelessWidget {
               onPressed: onEdit,
             ),
             IconButton(
-              icon: Icon(Icons.delete_rounded, color: colors.error),
-              tooltip: 'Eliminar',
-              onPressed: onDelete,
+              icon: Icon(
+                Icons.delete_rounded,
+                color: canDelete ? colors.error : colors.outlineVariant,
+              ),
+              tooltip: canDelete
+                  ? 'Eliminar'
+                  : 'No se puede eliminar el único administrador',
+              onPressed: canDelete ? onDelete : null,
             ),
           ],
         ),

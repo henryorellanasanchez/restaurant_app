@@ -67,7 +67,11 @@ class _SincronizacionPageState extends ConsumerState<SincronizacionPage>
             state: state,
             dtFmt: _dtFmt,
             onSync: () => ref.read(syncProvider.notifier).sincronizarAhora(),
-            onRefresh: () => ref.read(syncProvider.notifier).loadRegistros(),
+            onRefresh: () {
+              final notifier = ref.read(syncProvider.notifier);
+              notifier.loadRegistros();
+              notifier.checkCloudAvailability();
+            },
             onLimpiar: () => _onLimpiar(context),
           ),
           // ── Resumen ──────────────────────────────────────────────────
@@ -155,67 +159,183 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final canSync =
+        !state.isSyncing &&
+        !state.isCheckingCloud &&
+        state.cloudAvailable != false;
+    final syncBlockedByCloud = !state.isSyncing && !canSync;
 
     return Container(
       color: colors.surface,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-      child: Row(
+      child: Column(
         children: [
-          const Icon(Icons.sync_rounded, size: 24),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Sincronización',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                if (state.ultimaSync != null)
-                  Text(
-                    'Última sync: ${dtFmt.format(state.ultimaSync!)}',
-                    style: TextStyle(fontSize: 11, color: colors.outline),
-                  ),
-              ],
-            ),
-          ),
-          // Limpiar historial
-          IconButton(
-            icon: const Icon(Icons.cleaning_services_rounded),
-            tooltip: 'Limpiar historial',
-            onPressed: onLimpiar,
-          ),
-          // Refrescar
-          IconButton(
-            icon: state.isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh_rounded),
-            tooltip: 'Actualizar',
-            onPressed: state.isLoading ? null : onRefresh,
-          ),
-          const SizedBox(width: 4),
-          // Sincronizar ahora
-          FilledButton.icon(
-            onPressed: state.isSyncing ? null : onSync,
-            icon: state.isSyncing
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+          Row(
+            children: [
+              const Icon(Icons.sync_rounded, size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sincronización',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  )
-                : const Icon(Icons.cloud_upload_rounded),
-            label: Text(state.isSyncing ? 'Sincronizando…' : 'Sincronizar'),
+                    if (state.ultimaSync != null)
+                      Text(
+                        'Última sync: ${dtFmt.format(state.ultimaSync!)}',
+                        style: TextStyle(fontSize: 11, color: colors.outline),
+                      ),
+                  ],
+                ),
+              ),
+              // Limpiar historial
+              IconButton(
+                icon: const Icon(Icons.cleaning_services_rounded),
+                tooltip: 'Limpiar historial',
+                onPressed: onLimpiar,
+              ),
+              // Refrescar
+              IconButton(
+                icon: state.isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                tooltip: 'Actualizar',
+                onPressed: state.isLoading ? null : onRefresh,
+              ),
+              const SizedBox(width: 4),
+              // Sincronizar ahora
+              FilledButton.icon(
+                onPressed: canSync ? onSync : null,
+                icon: state.isSyncing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.cloud_upload_rounded),
+                label: Text(state.isSyncing ? 'Sincronizando…' : 'Sincronizar'),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+          _CloudStatusPill(state: state),
+          if (syncBlockedByCloud) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                state.isCheckingCloud
+                    ? 'Espera a que termine la verificación de nube.'
+                    : 'Sincronizar está deshabilitado hasta conectar Firebase.',
+                style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _CloudStatusPill extends StatelessWidget {
+  const _CloudStatusPill({required this.state});
+
+  final SyncState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    final bool checking = state.isCheckingCloud;
+    final bool ready = state.cloudAvailable == true;
+    final bool unavailable = state.cloudAvailable == false;
+
+    final bgColor = checking
+        ? colors.primary.withValues(alpha: 0.08)
+        : ready
+        ? Colors.green.withValues(alpha: 0.12)
+        : unavailable
+        ? colors.error.withValues(alpha: 0.12)
+        : colors.surfaceContainerHighest;
+
+    final fgColor = checking
+        ? colors.primary
+        : ready
+        ? Colors.green.shade700
+        : unavailable
+        ? colors.error
+        : colors.onSurfaceVariant;
+
+    final label = checking
+        ? 'Verificando conexión con nube...'
+        : ready
+        ? 'Nube conectada'
+        : unavailable
+        ? 'Nube desconectada'
+        : 'Estado de nube no verificado';
+
+    final detail = checking
+        ? null
+        : state.cloudStatusMessage != null
+        ? ' · ${state.cloudStatusMessage}'
+        : null;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (checking)
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: fgColor,
+                ),
+              )
+            else
+              Icon(
+                ready
+                    ? Icons.cloud_done_rounded
+                    : unavailable
+                    ? Icons.cloud_off_rounded
+                    : Icons.cloud_queue_rounded,
+                size: 14,
+                color: fgColor,
+              ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                detail == null ? label : '$label$detail',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: fgColor,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

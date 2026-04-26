@@ -547,9 +547,11 @@ class _NuevoPedidoPageState extends ConsumerState<NuevoPedidoPage>
                 ),
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Column(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 360;
+
+                      final totalInfo = Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
@@ -565,9 +567,9 @@ class _NuevoPedidoPageState extends ConsumerState<NuevoPedidoPage>
                             ),
                           ),
                         ],
-                      ),
-                      const Spacer(),
-                      ElevatedButton.icon(
+                      );
+
+                      final confirmButton = ElevatedButton.icon(
                         onPressed: _mesaSeleccionada != null && !_guardando
                             ? () {
                                 Navigator.pop(ctx);
@@ -586,8 +588,26 @@ class _NuevoPedidoPageState extends ConsumerState<NuevoPedidoPage>
                             vertical: 14,
                           ),
                         ),
-                      ),
-                    ],
+                      );
+
+                      if (isCompact) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            totalInfo,
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: confirmButton,
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [totalInfo, const Spacer(), confirmButton],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -948,42 +968,40 @@ class _ResumenBar extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            // ── Info carrito ───────────────────────────────────
-            Expanded(
-              child: InkWell(
-                onTap: onVerCarrito,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$totalItems item${totalItems == 1 ? '' : 's'}',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 420;
+
+            final infoCarrito = InkWell(
+              onTap: onVerCarrito,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$totalItems item${totalItems == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
                       ),
-                      Text(
-                        '\$${total.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
+                    ),
+                    Text(
+                      '\$${total.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+            );
 
-            // ── Confirmar ──────────────────────────────────────
-            ElevatedButton.icon(
+            final confirmarButton = ElevatedButton.icon(
               onPressed: mesaSeleccionada == null || guardando
                   ? null
                   : onConfirmar,
@@ -1010,8 +1028,26 @@ class _ResumenBar extends StatelessWidget {
                   vertical: 14,
                 ),
               ),
-            ),
-          ],
+            );
+
+            if (isCompact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  infoCarrito,
+                  const SizedBox(height: 10),
+                  SizedBox(width: double.infinity, child: confirmarButton),
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(child: infoCarrito),
+                confirmarButton,
+              ],
+            );
+          },
         ),
       ),
     );

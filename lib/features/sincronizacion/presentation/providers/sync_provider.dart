@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:restaurant_app/core/di/injection_container.dart';
+import 'package:restaurant_app/core/sync/sync_cloud_service.dart';
 import 'package:restaurant_app/core/sync/sync_manager.dart';
 import 'package:restaurant_app/core/sync/sync_record.dart';
 
@@ -12,6 +13,9 @@ class SyncState {
   final List<SyncRecord> registros;
   final bool isLoading;
   final bool isSyncing;
+  final bool isCheckingCloud;
+  final bool? cloudAvailable;
+  final String? cloudStatusMessage;
   final DateTime? ultimaSync;
   final String? error;
   final String? successMessage;
@@ -20,6 +24,9 @@ class SyncState {
     this.registros = const [],
     this.isLoading = false,
     this.isSyncing = false,
+    this.isCheckingCloud = false,
+    this.cloudAvailable,
+    this.cloudStatusMessage,
     this.ultimaSync,
     this.error,
     this.successMessage,
@@ -38,6 +45,10 @@ class SyncState {
     List<SyncRecord>? registros,
     bool? isLoading,
     bool? isSyncing,
+    bool? isCheckingCloud,
+    bool? cloudAvailable,
+    String? cloudStatusMessage,
+    bool clearCloudStatus = false,
     DateTime? ultimaSync,
     String? error,
     bool clearError = false,
@@ -48,6 +59,11 @@ class SyncState {
       registros: registros ?? this.registros,
       isLoading: isLoading ?? this.isLoading,
       isSyncing: isSyncing ?? this.isSyncing,
+      isCheckingCloud: isCheckingCloud ?? this.isCheckingCloud,
+      cloudAvailable: cloudAvailable ?? this.cloudAvailable,
+      cloudStatusMessage: clearCloudStatus
+          ? null
+          : cloudStatusMessage ?? this.cloudStatusMessage,
       ultimaSync: ultimaSync ?? this.ultimaSync,
       error: clearError ? null : error ?? this.error,
       successMessage: clearSuccess
@@ -60,10 +76,14 @@ class SyncState {
 // ── Notifier ───────────────────────────────────────────────────────────────────
 
 class SyncNotifier extends StateNotifier<SyncState> {
-  SyncNotifier({required SyncManager syncManager})
-    : _syncManager = syncManager,
-      super(const SyncState()) {
+  SyncNotifier({
+    required SyncManager syncManager,
+    required SyncCloudService cloudService,
+  }) : _cloudService = cloudService,
+       _syncManager = syncManager,
+       super(const SyncState()) {
     loadRegistros();
+    checkCloudAvailability();
     // Refresca cada 30 segundos para reflejar operaciones recientes de la app
     _timer = Timer.periodic(
       const Duration(seconds: 30),
@@ -72,6 +92,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }
 
   final SyncManager _syncManager;
+  final SyncCloudService _cloudService;
   Timer? _timer;
 
   @override
@@ -95,10 +116,34 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
   }
 
-  /// Simula la sincronización marcando todos los pendientes como sincronizados.
+  /// Verifica si la sincronización en nube está disponible.
+  Future<void> checkCloudAvailability() async {
+    state = state.copyWith(
+      isCheckingCloud: true,
+      clearCloudStatus: true,
+      clearError: true,
+    );
+
+    try {
+      await _cloudService.ensureAvailable();
+      state = state.copyWith(
+        isCheckingCloud: false,
+        cloudAvailable: true,
+        cloudStatusMessage: 'Nube disponible para sincronizar',
+      );
+    } catch (_) {
+      state = state.copyWith(
+        isCheckingCloud: false,
+        cloudAvailable: false,
+        cloudStatusMessage:
+            'Nube no disponible. Revisa la configuración de Firebase.',
+      );
+    }
+  }
+
+  /// Sincroniza cada registro pendiente enviándolo a Firestore.
   ///
-  /// En producción con Firebase activado, este método enviará los datos
-  /// a Firestore antes de marcar como sincronizados.
+  /// Solo marca como sincronizado cuando el push remoto finaliza correctamente.
   Future<void> sincronizarAhora() async {
     if (!state.tienePendientes) {
       state = state.copyWith(
@@ -108,13 +153,32 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
 
     state = state.copyWith(isSyncing: true, clearError: true);
+
+    // Fallar rápido si Firebase/Firestore no está listo, para evitar
+    // incrementar intentos de cada registro por un problema global.
+    try {
+      await _cloudService.ensureAvailable();
+      state = state.copyWith(
+        cloudAvailable: true,
+        cloudStatusMessage: 'Nube disponible para sincronizar',
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isSyncing: false,
+        cloudAvailable: false,
+        cloudStatusMessage:
+            'Nube no disponible. Revisa la configuración de Firebase.',
+        error: e.toString(),
+      );
+      return;
+    }
+
     int procesados = 0;
     int errores = 0;
 
     for (final record in state.pendientes) {
       try {
-        // TODO: Cuando Firebase esté activado, enviar datos a Firestore aquí
-        // await _firebaseService.push(record);
+        await _cloudService.pushRecord(record);
         await _syncManager.marcarSincronizado(record.id);
         procesados++;
       } catch (e) {
@@ -159,5 +223,5 @@ class SyncNotifier extends StateNotifier<SyncState> {
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 final syncProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
-  return SyncNotifier(syncManager: sl());
+  return SyncNotifier(syncManager: sl(), cloudService: sl());
 });

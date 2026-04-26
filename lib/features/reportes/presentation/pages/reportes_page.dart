@@ -1,10 +1,12 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:restaurant_app/config/routes/app_router.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_mesero.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_metodo_pago.dart';
@@ -12,7 +14,6 @@ import 'package:restaurant_app/features/reportes/domain/entities/reporte_product
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_resumen.dart';
 import 'package:restaurant_app/features/reportes/domain/entities/reporte_venta_dia.dart';
 import 'package:restaurant_app/features/reportes/presentation/providers/reportes_provider.dart';
-import 'package:restaurant_app/services/backup_access.dart' as backup_access;
 import 'package:restaurant_app/services/report_export_access.dart'
     as report_export_access;
 
@@ -1722,6 +1723,43 @@ class _TabMetodosState extends State<_TabMetodos> {
   }
 }
 
+// ignore: unused_element
+class _TabRespaldosRedirect extends StatelessWidget {
+  const _TabRespaldosRedirect();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.backup_rounded, size: 64, color: Color(0xFF1B7A8A)),
+          const SizedBox(height: 16),
+          const Text(
+            'Respaldos del sistema',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Accede a la gestión completa de respaldos locales\ny Google Drive desde la sección dedicada.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF6B6561)),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: () => context.go(AppRouter.driveBackup),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Abrir Respaldos'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1B7A8A),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TabRespaldos extends StatefulWidget {
   const _TabRespaldos({required this.onShowMessage});
 
@@ -1732,356 +1770,36 @@ class _TabRespaldos extends StatefulWidget {
 }
 
 class _TabRespaldosState extends State<_TabRespaldos> {
-  late Future<Map<String, dynamic>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = backup_access.getBackupOverview();
-  }
-
-  Future<void> _reload() async {
-    setState(() {
-      _future = backup_access.getBackupOverview();
-    });
-  }
-
-  Future<void> _crearRespaldo() async {
-    final ok = await backup_access.createManualBackup();
-    widget.onShowMessage(
-      ok ? 'Respaldo creado correctamente.' : 'No se pudo crear el respaldo.',
-    );
-    await _reload();
-  }
-
-  Future<void> _importarArchivo() async {
-    final result = await backup_access.importBackupFile();
-    if (result['cancelled'] == true) return;
-
-    widget.onShowMessage(
-      result['message']?.toString() ??
-          'No se pudo importar el archivo de respaldo.',
-    );
-
-    await _reload();
-  }
-
-  Future<void> _exportarRespaldo(String backupName) async {
-    final result = await backup_access.exportBackup(backupName);
-    if (result['cancelled'] == true) return;
-
-    widget.onShowMessage(
-      result['message']?.toString() ?? 'No se pudo exportar el respaldo.',
-    );
-  }
-
-  Future<void> _restaurar(Map<String, dynamic> backup) async {
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Restaurar respaldo'),
-        content: Text(
-          'Se reemplazará la base actual por "${backup['name']}". Antes se creará una copia de seguridad automática.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Restaurar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmado != true) return;
-
-    final ok = await backup_access.restoreBackup(backup['name'].toString());
-    widget.onShowMessage(
-      ok
-          ? 'Respaldo restaurado. Actualiza las pantallas o reinicia la app para ver los cambios.'
-          : 'No se pudo restaurar el respaldo.',
-    );
-    await _reload();
-  }
-
-  Future<void> _eliminar(Map<String, dynamic> backup) async {
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar respaldo'),
-        content: Text('Se eliminará "${backup['name']}" de forma permanente.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmado != true) return;
-
-    final ok = await backup_access.deleteBackup(backup['name'].toString());
-    widget.onShowMessage(
-      ok ? 'Respaldo eliminado.' : 'No se pudo eliminar el respaldo.',
-    );
-    await _reload();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return const _EmptyState(
-            mensaje: 'No se pudieron cargar los respaldos.',
-          );
-        }
-
-        final data = snapshot.data ?? const <String, dynamic>{};
-        final supported = data['supported'] == true;
-
-        if (!supported) {
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.backup_outlined),
-                          SizedBox(width: 8),
-                          Text(
-                            'Respaldos',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        data['message']?.toString() ??
-                            'Esta función no está disponible en esta plataforma.',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-
-        final stats = Map<String, dynamic>.from(
-          data['stats'] as Map? ?? const <String, dynamic>{},
-        );
-        final backups = (data['backups'] as List? ?? const [])
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
-        final dbInfo = Map<String, dynamic>.from(
-          data['dbInfo'] as Map? ?? const <String, dynamic>{},
-        );
-        final lastBackup = stats['lastBackupTime'] as DateTime?;
-        final dbSize = (dbInfo['sizeMB'] as num?)?.toDouble() ?? 0;
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.backup_rounded),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Respaldo y restauración',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Crea copias locales de la base de datos, expórtalas a otro equipo o recupera información si algo sale mal.',
-                      style: TextStyle(color: colors.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _crearRespaldo,
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Crear respaldo'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _importarArchivo,
-                          icon: const Icon(Icons.file_upload_outlined),
-                          label: const Text('Importar archivo'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _reload,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Actualizar'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Para mover datos entre computadoras: exporta un respaldo aquí y luego usa “Importar archivo” en el otro equipo.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.backup_rounded, size: 64, color: Color(0xFF1B7A8A)),
+          const SizedBox(height: 16),
+          const Text(
+            'Respaldos del sistema',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Accede a la gestión completa de respaldos locales\n'
+            'y Google Drive desde la sección dedicada.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF6B6561), height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: () => context.go(AppRouter.driveBackup),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Abrir Respaldos'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1B7A8A),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _InsightTile(
-                  title: 'Respaldos',
-                  value: '${stats['totalBackups'] ?? backups.length}',
-                  subtitle: 'Copias guardadas',
-                  icon: Icons.inventory_2_outlined,
-                  color: Colors.indigo,
-                ),
-                _InsightTile(
-                  title: 'Base activa',
-                  value: '${dbSize.toStringAsFixed(2)} MB',
-                  subtitle: 'Tamaño actual',
-                  icon: Icons.storage_rounded,
-                  color: Colors.teal,
-                ),
-                _InsightTile(
-                  title: 'Último respaldo',
-                  value: lastBackup == null
-                      ? 'Nunca'
-                      : DateFormat('dd/MM HH:mm').format(lastBackup),
-                  subtitle: 'Última ejecución',
-                  icon: Icons.history_toggle_off_rounded,
-                  color: Colors.deepOrange,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.folder_open_rounded),
-                title: const Text('Ubicación de la base local'),
-                subtitle: Text(
-                  dbInfo['path']?.toString() ?? 'Ruta no disponible',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Respaldos disponibles',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (backups.isEmpty)
-              const _EmptyState(
-                mensaje: 'Aún no hay respaldos guardados en este equipo.',
-              )
-            else
-              ...backups.map(
-                (backup) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: colors.primaryContainer,
-                      child: Icon(
-                        Icons.save_as_rounded,
-                        color: colors.onPrimaryContainer,
-                      ),
-                    ),
-                    title: Text(backup['name'].toString()),
-                    subtitle: Text(
-                      '${backup['createdFormatted']} • ${backup['sizeFormatted']}',
-                    ),
-                    trailing: PopupMenuButton<String>(
-                      tooltip: 'Acciones del respaldo',
-                      onSelected: (value) async {
-                        switch (value) {
-                          case 'exportar':
-                            await _exportarRespaldo(backup['name'].toString());
-                            break;
-                          case 'restaurar':
-                            await _restaurar(backup);
-                            break;
-                          case 'eliminar':
-                            await _eliminar(backup);
-                            break;
-                        }
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem<String>(
-                          value: 'exportar',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.file_download_outlined),
-                            title: Text('Exportar'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'restaurar',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              Icons.settings_backup_restore_rounded,
-                            ),
-                            title: Text('Restaurar'),
-                          ),
-                        ),
-                        PopupMenuItem<String>(
-                          value: 'eliminar',
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.delete_outline_rounded),
-                            title: Text('Eliminar'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 }

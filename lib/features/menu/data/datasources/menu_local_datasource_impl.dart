@@ -1,3 +1,4 @@
+import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
 import 'package:restaurant_app/core/database/database_helper.dart';
 import 'package:restaurant_app/core/errors/exceptions.dart';
 import 'package:restaurant_app/features/menu/data/datasources/menu_local_datasource.dart';
@@ -10,7 +11,7 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
   final DatabaseHelper _dbHelper;
 
   MenuLocalDataSourceImpl({required DatabaseHelper dbHelper})
-      : _dbHelper = dbHelper;
+    : _dbHelper = dbHelper;
 
   static const _tableCategorias = 'categorias';
   static const _tableProductos = 'productos';
@@ -78,10 +79,7 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
     try {
       await _dbHelper.update(
         _tableCategorias,
-        {
-          'activo': 0,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
+        {'activo': 0, 'updated_at': DateTime.now().toIso8601String()},
         where: 'id = ?',
         whereArgs: [id],
       );
@@ -97,10 +95,7 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
         for (var i = 0; i < orderedIds.length; i++) {
           await txn.update(
             _tableCategorias,
-            {
-              'orden': i,
-              'updated_at': DateTime.now().toIso8601String(),
-            },
+            {'orden': i, 'updated_at': DateTime.now().toIso8601String()},
             where: 'id = ?',
             whereArgs: [orderedIds[i]],
           );
@@ -125,8 +120,7 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
 
       final productos = <ProductoModel>[];
       for (final row in results) {
-        final variantes =
-            await getVariantesByProducto(row['id'] as String);
+        final variantes = await getVariantesByProducto(row['id'] as String);
         productos.add(ProductoModel.fromMap(row, variantes: variantes));
       }
       return productos;
@@ -137,7 +131,8 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
 
   @override
   Future<List<ProductoModel>> getProductosByCategoria(
-      String categoriaId) async {
+    String categoriaId,
+  ) async {
     try {
       final results = await _dbHelper.query(
         _tableProductos,
@@ -148,14 +143,14 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
 
       final productos = <ProductoModel>[];
       for (final row in results) {
-        final variantes =
-            await getVariantesByProducto(row['id'] as String);
+        final variantes = await getVariantesByProducto(row['id'] as String);
         productos.add(ProductoModel.fromMap(row, variantes: variantes));
       }
       return productos;
     } catch (e) {
       throw DatabaseException(
-          message: 'Error al obtener productos de categoría: $e');
+        message: 'Error al obtener productos de categoría: $e',
+      );
     }
   }
 
@@ -192,14 +187,34 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
   @override
   Future<void> updateProducto(ProductoModel producto) async {
     try {
-      final data = producto.toMap();
-      data['updated_at'] = DateTime.now().toIso8601String();
-      await _dbHelper.update(
-        _tableProductos,
-        data,
-        where: 'id = ?',
-        whereArgs: [producto.id],
-      );
+      await _dbHelper.transaction((txn) async {
+        // 1. Actualizar campos del producto
+        final data = producto.toMap();
+        data['updated_at'] = DateTime.now().toIso8601String();
+        await txn.update(
+          _tableProductos,
+          data,
+          where: 'id = ?',
+          whereArgs: [producto.id],
+        );
+
+        // 2. Soft-delete de todas las variantes existentes del producto
+        await txn.update(
+          _tableVariantes,
+          {'activo': 0, 'updated_at': DateTime.now().toIso8601String()},
+          where: 'producto_id = ?',
+          whereArgs: [producto.id],
+        );
+
+        // 3. Re-insertar las variantes actuales (replace si ya existe el id)
+        for (final vm in producto.variantesToMapList()) {
+          await txn.insert(
+            _tableVariantes,
+            vm,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      });
     } catch (e) {
       throw DatabaseException(message: 'Error al actualizar producto: $e');
     }
@@ -212,19 +227,13 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
       await _dbHelper.transaction((txn) async {
         await txn.update(
           _tableVariantes,
-          {
-            'activo': 0,
-            'updated_at': DateTime.now().toIso8601String(),
-          },
+          {'activo': 0, 'updated_at': DateTime.now().toIso8601String()},
           where: 'producto_id = ?',
           whereArgs: [id],
         );
         await txn.update(
           _tableProductos,
-          {
-            'activo': 0,
-            'updated_at': DateTime.now().toIso8601String(),
-          },
+          {'activo': 0, 'updated_at': DateTime.now().toIso8601String()},
           where: 'id = ?',
           whereArgs: [id],
         );
@@ -247,16 +256,14 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
         whereArgs: [id],
       );
     } catch (e) {
-      throw DatabaseException(
-          message: 'Error al cambiar disponibilidad: $e');
+      throw DatabaseException(message: 'Error al cambiar disponibilidad: $e');
     }
   }
 
   // ── Variantes ────────────────────────────────────────────────────
 
   @override
-  Future<List<VarianteModel>> getVariantesByProducto(
-      String productoId) async {
+  Future<List<VarianteModel>> getVariantesByProducto(String productoId) async {
     try {
       final results = await _dbHelper.query(
         _tableVariantes,
@@ -300,10 +307,7 @@ class MenuLocalDataSourceImpl implements MenuLocalDataSource {
     try {
       await _dbHelper.update(
         _tableVariantes,
-        {
-          'activo': 0,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
+        {'activo': 0, 'updated_at': DateTime.now().toIso8601String()},
         where: 'id = ?',
         whereArgs: [id],
       );

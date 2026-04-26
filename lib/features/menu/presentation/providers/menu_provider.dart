@@ -87,38 +87,45 @@ class MenuNotifier extends StateNotifier<MenuState> {
     required CreateVariante createVariante,
     required UpdateVariante updateVariante,
     required DeleteVariante deleteVariante,
-  })  : _getCategorias = getCategorias,
-        _createCategoria = createCategoria,
-        _updateCategoria = updateCategoria,
-        _deleteCategoria = deleteCategoria,
-        _reordenarCategorias = reordenarCategorias,
-        _getProductos = getProductos,
-        _createProducto = createProducto,
-        _updateProducto = updateProducto,
-        _deleteProducto = deleteProducto,
-        _toggleDisponibilidad = toggleDisponibilidad,
-        _createVariante = createVariante,
-        _updateVariante = updateVariante,
-        _deleteVariante = deleteVariante,
-        super(const MenuState());
+  }) : _getCategorias = getCategorias,
+       _createCategoria = createCategoria,
+       _updateCategoria = updateCategoria,
+       _deleteCategoria = deleteCategoria,
+       _reordenarCategorias = reordenarCategorias,
+       _getProductos = getProductos,
+       _createProducto = createProducto,
+       _updateProducto = updateProducto,
+       _deleteProducto = deleteProducto,
+       _toggleDisponibilidad = toggleDisponibilidad,
+       _createVariante = createVariante,
+       _updateVariante = updateVariante,
+       _deleteVariante = deleteVariante,
+       super(const MenuState());
 
   // ── Carga inicial ─────────────────────────────────────────────
 
-  Future<void> loadMenu([String? restaurantId]) async {
-    state = state.copyWith(isLoading: true, clearError: true);
+  Future<void> loadMenu([String? restaurantId, bool silent = false]) async {
+    if (!silent) {
+      state = state.copyWith(isLoading: true, clearError: true);
+    } else {
+      state = state.copyWith(clearError: true);
+    }
     final rid = restaurantId ?? AppConstants.defaultRestaurantId;
 
     final catResult = await _getCategorias(rid);
     catResult.fold(
-      (failure) => state =
-          state.copyWith(isLoading: false, errorMessage: failure.message),
+      (failure) => state = state.copyWith(
+        isLoading: false,
+        errorMessage: failure.message,
+      ),
       (cats) async {
         final prodResult = await _getProductos(rid);
         prodResult.fold(
           (failure) => state = state.copyWith(
-              isLoading: false,
-              categorias: cats,
-              errorMessage: failure.message),
+            isLoading: false,
+            categorias: cats,
+            errorMessage: failure.message,
+          ),
           (prods) => state = state.copyWith(
             isLoading: false,
             categorias: cats,
@@ -149,7 +156,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -164,7 +171,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -179,7 +186,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -187,7 +194,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
 
   Future<void> reordenarCategorias(List<String> orderedIds) async {
     await _reordenarCategorias(orderedIds);
-    loadMenu();
+    loadMenu(null, true);
   }
 
   // ── Productos ──────────────────────────────────────────────────
@@ -201,7 +208,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -216,7 +223,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -231,7 +238,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -245,39 +252,38 @@ class MenuNotifier extends StateNotifier<MenuState> {
     state = state.copyWith(productos: updated);
 
     final result = await _toggleDisponibilidad(id, disponible);
-    result.fold(
-      (failure) {
-        // Revertir en caso de error
-        final reverted = state.productos
-            .map((p) => p.id == id ? p.copyWith(disponible: !disponible) : p)
-            .toList();
-        state = state.copyWith(
-            productos: reverted, errorMessage: failure.message);
-      },
-      (_) {},
-    );
+    result.fold((failure) {
+      // Revertir en caso de error
+      final reverted = state.productos
+          .map((p) => p.id == id ? p.copyWith(disponible: !disponible) : p)
+          .toList();
+      state = state.copyWith(
+        productos: reverted,
+        errorMessage: failure.message,
+      );
+    }, (_) {});
   }
 
   // ── Variantes ──────────────────────────────────────────────────
 
   Future<bool> crearVariante(
-      String productoId, Producto productoActualizado) async {
+    String productoId,
+    Producto productoActualizado,
+  ) async {
     state = state.copyWith(clearError: true);
     for (final v in productoActualizado.variantes) {
       final result = await _createVariante(v);
       if (result.isLeft()) {
-        final msg =
-            result.fold((f) => f.message, (_) => 'Error desconocido');
+        final msg = result.fold((f) => f.message, (_) => 'Error desconocido');
         state = state.copyWith(errorMessage: msg);
         return false;
       }
     }
-    loadMenu();
+    loadMenu(null, true);
     return true;
   }
 
-  Future<bool> actualizarVariante(
-      dynamic variante) async {
+  Future<bool> actualizarVariante(dynamic variante) async {
     state = state.copyWith(clearError: true);
     final result = await _updateVariante(variante);
     return result.fold(
@@ -286,7 +292,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );
@@ -301,7 +307,7 @@ class MenuNotifier extends StateNotifier<MenuState> {
         return false;
       },
       (_) {
-        loadMenu();
+        loadMenu(null, true);
         return true;
       },
     );

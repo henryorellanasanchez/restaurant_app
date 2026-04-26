@@ -189,60 +189,79 @@ class CocinaTicketCard extends StatelessWidget {
     Duration elapsed,
     bool isUrgente,
   ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: colorEstado.withValues(alpha: 0.15),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      child: Row(
-        children: [
-          // Mesa nombre
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  Icons.table_restaurant_rounded,
-                  size: 18,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 360;
+
+        final mesaWidget = Row(
+          children: [
+            Icon(Icons.table_restaurant_rounded, size: 18, color: cs.onSurface),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                pedido.mesaNombre ?? 'Sin mesa',
+                style: TextStyle(
                   color: cs.onSurface,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    pedido.mesaNombre ?? 'Sin mesa',
-                    style: TextStyle(
-                      color: cs.onSurface,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
+          ],
+        );
 
-          // Cantidad de items
-          Text(
-            '${pedido.cantidadItems} item${pedido.cantidadItems != 1 ? "s" : ""}',
-            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
-          ),
+        final detalleWidget = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${pedido.cantidadItems} item${pedido.cantidadItems != 1 ? "s" : ""}',
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+            ),
+            const SizedBox(width: 10),
+            _TimerBadge(
+              elapsed: elapsed,
+              isUrgente: isUrgente,
+              onSurfaceVariant: cs.onSurfaceVariant,
+            ),
+          ],
+        );
 
-          const SizedBox(width: 10),
-
-          // Tiempo transcurrido (pulsante si urgente)
-          _TimerBadge(
-            elapsed: elapsed,
-            isUrgente: isUrgente,
-            onSurfaceVariant: cs.onSurfaceVariant,
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: colorEstado.withValues(alpha: 0.15),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           ),
-        ],
-      ),
+          child: isCompact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    mesaWidget,
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: detalleWidget,
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: mesaWidget),
+                    const SizedBox(width: 10),
+                    detalleWidget,
+                  ],
+                ),
+        );
+      },
     );
   }
 
   Color _colorByEstado(EstadoPedido estado) {
     switch (estado) {
+      case EstadoPedido.pendienteAprobacion:
+        return Colors.orange;
       case EstadoPedido.creado:
         return AppColors.pedidoCreado;
       case EstadoPedido.aceptado:

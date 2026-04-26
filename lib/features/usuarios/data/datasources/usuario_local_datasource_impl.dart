@@ -1,6 +1,7 @@
 import 'package:restaurant_app/core/database/database_helper.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/core/errors/exceptions.dart';
+import 'package:restaurant_app/core/utils/pin_hasher.dart';
 import 'package:restaurant_app/features/usuarios/data/datasources/usuario_local_datasource.dart';
 import 'package:restaurant_app/features/usuarios/data/models/usuario_model.dart';
 
@@ -76,8 +77,14 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
       rol: usuario.rol,
     );
 
-    await _dbHelper.insert('usuarios', usuario.toMap());
-    return usuario;
+    // Hashear el PIN antes de persistir
+    final hashedPin = PinHasher.hash(usuario.pin!);
+    final usuarioConHash = UsuarioModel.fromMap({
+      ...usuario.toMap(),
+      'pin': hashedPin,
+    });
+    await _dbHelper.insert('usuarios', usuarioConHash.toMap());
+    return usuario; // devuelve con PIN original para la sesión en memoria
   }
 
   @override
@@ -89,8 +96,11 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
       excludeUserId: usuario.id,
     );
 
+    // Hashear el PIN antes de persistir
+    final hashedPin = PinHasher.hash(usuario.pin!);
     final updated = UsuarioModel.fromMap({
       ...usuario.toMap(),
+      'pin': hashedPin,
       'updated_at': DateTime.now().toIso8601String(),
     });
     await _dbHelper.update(
@@ -99,7 +109,7 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
       where: 'id = ?',
       whereArgs: [usuario.id],
     );
-    return updated;
+    return usuario; // devuelve con PIN original para la sesión en memoria
   }
 
   @override
@@ -139,14 +149,18 @@ class UsuarioLocalDataSourceImpl implements UsuarioLocalDataSource {
 
   @override
   Future<UsuarioModel?> verificarPin(String restaurantId, String pin) async {
+    // Hashear el PIN ingresado y comparar con el almacenado
+    final hashedPin = PinHasher.hash(pin);
     final rows = await _dbHelper.query(
       'usuarios',
       where: 'restaurant_id = ? AND pin = ? AND activo = 1',
-      whereArgs: [restaurantId, pin],
+      whereArgs: [restaurantId, hashedPin],
       limit: 1,
     );
     if (rows.isEmpty) return null;
-    return UsuarioModel.fromMap(rows.first);
+    // Devolver con PIN en texto plano para la sesión en memoria (nunca se re-persiste)
+    final model = UsuarioModel.fromMap(rows.first);
+    return UsuarioModel.fromMap({...model.toMap(), 'pin': pin});
   }
 
   @override

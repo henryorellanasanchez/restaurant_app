@@ -35,60 +35,72 @@ class _UpdateBannerState extends State<UpdateBanner> {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(
-              Icons.system_update_rounded,
-              color: AppColors.primary,
-              size: 22,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Nueva versión disponible: ${widget.info.latestVersion}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primaryDark,
-                    ),
-                  ),
-                  if (widget.info.releaseNotes.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.info.releaseNotes,
-                      style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                    ),
-                  ],
-                  if (widget.info.downloadUrl != null) ...[
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: () => _openDownload(widget.info.downloadUrl!),
-                      icon: const Icon(Icons.download_rounded, size: 18),
-                      label: const Text('Descargar actualización'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 420;
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.system_update_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Nueva versión disponible: ${widget.info.latestVersion}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryDark,
+                        ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (!isMandatory)
-              IconButton(
-                icon: const Icon(Icons.close_rounded, size: 18),
-                color: Colors.grey[600],
-                tooltip: 'Descartar',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => setState(() => _dismissed = true),
-              ),
-          ],
+                      if (widget.info.releaseNotes.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.info.releaseNotes,
+                          maxLines: isCompact ? 2 : 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                      if (widget.info.downloadUrl != null) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () =>
+                              _openDownload(widget.info.downloadUrl!),
+                          icon: const Icon(Icons.download_rounded, size: 18),
+                          label: const Text('Descargar actualización'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (!isMandatory)
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    color: Colors.grey[600],
+                    tooltip: 'Descartar',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => setState(() => _dismissed = true),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );

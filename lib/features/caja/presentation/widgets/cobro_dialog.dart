@@ -4,6 +4,7 @@ import 'package:restaurant_app/core/di/injection_container.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/features/caja/domain/entities/venta.dart';
 import 'package:restaurant_app/features/caja/presentation/providers/caja_provider.dart';
+import 'package:restaurant_app/features/clientes/presentation/providers/cliente_provider.dart';
 import 'package:restaurant_app/features/pedidos/domain/entities/pedido.dart';
 import 'package:restaurant_app/services/facturacion/sri_service.dart';
 
@@ -38,6 +39,8 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
   final _clienteNombreCtrl = TextEditingController();
   final _clienteEmailCtrl = TextEditingController();
   final _clienteIdCtrl = TextEditingController();
+  bool _buscandoCliente = false;
+  bool _clienteEncontrado = false;
   late final Future<SriConnectionStatus> _sriStatusFuture;
   bool _procesando = false;
 
@@ -54,6 +57,29 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
   void initState() {
     super.initState();
     _sriStatusFuture = sl<SriService>().getConnectionStatus();
+  }
+
+  Future<void> _lookupCliente(String cedula) async {
+    final clean = cedula.trim();
+    if (clean.length != 10 && clean.length != 13) {
+      setState(() => _clienteEncontrado = false);
+      return;
+    }
+    setState(() => _buscandoCliente = true);
+    final cliente = await ref
+        .read(clienteProvider.notifier)
+        .lookupByCedula(clean);
+    if (!mounted) return;
+    setState(() {
+      _buscandoCliente = false;
+      if (cliente != null) {
+        _clienteEncontrado = true;
+        _clienteNombreCtrl.text = cliente.nombreCompleto;
+        if (cliente.email != null) _clienteEmailCtrl.text = cliente.email!;
+      } else {
+        _clienteEncontrado = false;
+      }
+    });
   }
 
   @override
@@ -364,14 +390,42 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _clienteIdCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Cédula / RUC',
                     helperText: 'Obligatorio para emitir factura',
                     isDense: true,
-                    prefixIcon: Icon(Icons.badge_outlined),
+                    prefixIcon: const Icon(Icons.badge_outlined),
+                    suffixIcon: _buscandoCliente
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: Padding(
+                              padding: EdgeInsets.all(8),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : _clienteEncontrado
+                        ? Icon(
+                            Icons.verified_user_rounded,
+                            color: Colors.green.shade600,
+                          )
+                        : null,
                   ),
                   keyboardType: TextInputType.number,
+                  onChanged: _lookupCliente,
                 ),
+                if (_clienteEncontrado)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Cliente encontrado — datos cargados automáticamente.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 FutureBuilder<SriConnectionStatus>(
                   future: _sriStatusFuture,

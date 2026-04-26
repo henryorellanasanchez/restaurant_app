@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 import 'package:restaurant_app/core/database/database_helper.dart';
+import 'package:restaurant_app/core/sync/sync_cloud_service.dart';
 import 'package:restaurant_app/core/sync/sync_manager.dart';
 import 'package:restaurant_app/features/auth/presentation/providers/activation_provider.dart';
 import 'package:restaurant_app/features/auth/presentation/providers/auth_provider.dart';
@@ -65,6 +66,19 @@ import 'package:restaurant_app/features/usuarios/data/datasources/usuario_local_
 import 'package:restaurant_app/features/usuarios/data/repositories/usuario_repository_impl.dart';
 import 'package:restaurant_app/features/usuarios/domain/repositories/usuario_repository.dart';
 import 'package:restaurant_app/features/usuarios/domain/usecases/usuario_usecases.dart';
+// ── Página Pública ────────────────────────────────────────────────
+import 'package:restaurant_app/features/pagina_publica/data/datasources/public_config_datasource.dart';
+import 'package:restaurant_app/features/pagina_publica/data/datasources/public_config_datasource_impl.dart';
+import 'package:restaurant_app/features/pagina_publica/data/repositories/public_config_repository_impl.dart';
+import 'package:restaurant_app/features/pagina_publica/domain/repositories/public_config_repository.dart';
+import 'package:restaurant_app/features/pagina_publica/domain/usecases/public_config_usecases.dart';
+
+// ── Clientes ──────────────────────────────────────────────────────
+import 'package:restaurant_app/features/clientes/data/datasources/cliente_local_datasource.dart';
+import 'package:restaurant_app/features/clientes/data/datasources/cliente_local_datasource_impl.dart';
+import 'package:restaurant_app/features/clientes/data/repositories/cliente_repository_impl.dart';
+import 'package:restaurant_app/features/clientes/domain/repositories/cliente_repository.dart';
+import 'package:restaurant_app/features/clientes/domain/usecases/cliente_usecases.dart';
 
 /// Service Locator global.
 ///
@@ -83,6 +97,7 @@ Future<void> initDependencies() async {
   // ── Core ─────────────────────────────────────────────────────────
   sl.registerLazySingleton<DatabaseHelper>(() => DatabaseHelper.instance);
   sl.registerLazySingleton<SyncManager>(() => SyncManager());
+  sl.registerLazySingleton<SyncCloudService>(() => SyncCloudService());
   sl.registerLazySingleton<ActivationChangeNotifier>(
     () => ActivationChangeNotifier(),
   );
@@ -98,6 +113,8 @@ Future<void> initDependencies() async {
   _initCaja();
   _initReportes();
   _initUsuarios();
+  _initPaginaPublica();
+  _initClientes();
 
   // Inicializar la base de datos
   await sl<DatabaseHelper>().database;
@@ -270,4 +287,33 @@ void _initUsuarios() {
   sl.registerLazySingleton(() => UpdateUsuario(sl()));
   sl.registerLazySingleton(() => DeleteUsuario(sl()));
   sl.registerLazySingleton(() => VerificarPin(sl()));
+}
+
+/// Registra las dependencias del módulo de Clientes.
+void _initClientes() {
+  sl.registerLazySingleton<ClienteLocalDataSource>(
+    () => ClienteLocalDataSourceImpl(dbHelper: sl()),
+  );
+  sl.registerLazySingleton<ClienteRepository>(
+    () => ClienteRepositoryImpl(dataSource: sl()),
+  );
+  sl.registerLazySingleton(() => GetClientes(sl()));
+  sl.registerLazySingleton(() => GetClienteByCedula(sl()));
+  sl.registerLazySingleton(() => BuscarClientes(sl()));
+  sl.registerLazySingleton(() => CreateCliente(sl()));
+  sl.registerLazySingleton(() => UpdateCliente(sl()));
+  sl.registerLazySingleton(() => DeleteCliente(sl()));
+  sl.registerLazySingleton(() => GetResumenCliente(sl()));
+}
+
+/// Registra las dependencias del módulo de Página Pública.
+void _initPaginaPublica() {
+  sl.registerLazySingleton<PublicConfigDatasource>(
+    () => PublicConfigDatasourceImpl(dbHelper: sl()),
+  );
+  sl.registerLazySingleton<PublicConfigRepository>(
+    () => PublicConfigRepositoryImpl(datasource: sl()),
+  );
+  sl.registerLazySingleton(() => GetPublicConfig(sl()));
+  sl.registerLazySingleton(() => SavePublicConfig(sl()));
 }

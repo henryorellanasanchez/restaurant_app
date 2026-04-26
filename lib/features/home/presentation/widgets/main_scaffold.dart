@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:restaurant_app/config/routes/app_router.dart';
 import 'package:restaurant_app/core/di/injection_container.dart';
 import 'package:restaurant_app/core/domain/enums.dart';
 import 'package:restaurant_app/core/theme/app_colors.dart';
 import 'package:restaurant_app/features/auth/presentation/providers/auth_provider.dart';
+import 'package:restaurant_app/features/pedidos/presentation/providers/pedidos_provider.dart';
+import 'package:restaurant_app/features/pedidos/presentation/widgets/aprobar_pedidos_sheet.dart';
 
 /// Scaffold principal de la aplicación.
 ///
@@ -15,10 +20,17 @@ import 'package:restaurant_app/features/auth/presentation/providers/auth_provide
 /// - Pantallas grandes → NavigationRail expandido
 /// - Tablets → NavigationRail compacto
 /// - Móvil → NavigationBar + menú adicional
-class MainScaffold extends StatelessWidget {
+class MainScaffold extends ConsumerStatefulWidget {
   final Widget child;
 
   const MainScaffold({super.key, required this.child});
+
+  @override
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
+}
+
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
+  Timer? _pollingTimer;
 
   /// Todos los items de navegación del sistema.
   static const _allNavItems = [
@@ -63,6 +75,11 @@ class MainScaffold extends StatelessWidget {
       path: AppRouter.caja,
     ),
     _NavItem(
+      icon: Icons.people_rounded,
+      label: 'Clientes',
+      path: AppRouter.clientes,
+    ),
+    _NavItem(
       icon: Icons.analytics_rounded,
       label: 'Reportes',
       path: AppRouter.reportes,
@@ -77,18 +94,52 @@ class MainScaffold extends StatelessWidget {
       label: 'Sincronización',
       path: AppRouter.sincronizacion,
     ),
+    _NavItem(
+      icon: Icons.language_rounded,
+      label: 'Página pública',
+      path: AppRouter.restauranteConfig,
+    ),
+    _NavItem(
+      icon: Icons.backup_rounded,
+      label: 'Respaldos',
+      path: AppRouter.driveBackup,
+    ),
   ];
 
   List<_NavItem> _itemsForRole(RolUsuario rol) => _allNavItems
       .where((item) => AppRouter.isRouteAllowedForRole(rol, item.path))
       .toList();
 
+  bool _matchesPath(String currentPath, String itemPath) {
+    if (currentPath == itemPath) return true;
+    if (itemPath == '/') return currentPath == '/';
+    return currentPath.startsWith('$itemPath/');
+  }
+
   int _getSelectedIndex(BuildContext context, List<_NavItem> items) {
-    final location = GoRouterState.of(context).uri.toString();
+    final location = GoRouterState.of(context).uri.path;
     for (var i = 0; i < items.length; i++) {
-      if (location == items[i].path) return i;
+      if (_matchesPath(location, items[i].path)) return i;
     }
     return 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Iniciar polling de pedidos pendientes de aprobación cada 20 segundos.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(pedidosProvider.notifier).loadPedidosActivos();
+      _pollingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+        if (mounted) ref.read(pedidosProvider.notifier).loadPedidosActivos();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -97,30 +148,42 @@ class MainScaffold extends StatelessWidget {
     final usuario = auth.usuario;
     final rol = usuario?.rol ?? RolUsuario.mesero;
     final navItems = _itemsForRole(rol);
+
+    // Escuchar pedidos pendientes de aprobación (para badge).
+    final pendientesCount = ref.watch(
+      pedidosProvider.select((s) => s.totalPendientesAprobacion),
+    );
+    final puedeAprobarPedidos = rol == RolUsuario.mesero || rol.esAdmin;
+
+    if (navItems.isEmpty) {
+      return Scaffold(body: SafeArea(child: widget.child));
+    }
+
     final selectedIndex = _getSelectedIndex(context, navItems);
+    final currentPath = GoRouterState.of(context).uri.path;
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final textScale = MediaQuery.textScalerOf(context).scale(1);
     final isMobile = screenWidth < 640;
     final isWideScreen = screenWidth >= 1000;
 
     if (isMobile) {
       final quickNavItems = navItems.take(4).toList();
-      final showMoreMenu = true;
-      final currentPath = navItems[selectedIndex].path;
+      final showMoreMenu = navItems.length > quickNavItems.length;
       final quickSelectedIndex = quickNavItems.indexWhere(
-        (item) => item.path == currentPath,
+        (item) => _matchesPath(currentPath, item.path),
       );
       final mobileSelectedIndex = quickSelectedIndex >= 0
           ? quickSelectedIndex
-          : quickNavItems.length;
+          : (showMoreMenu ? quickNavItems.length : 0);
 
       return Scaffold(
-        body: SafeArea(child: child),
+        body: SafeArea(child: widget.child),
         bottomNavigationBar: NavigationBar(
+          backgroundColor: Colors.white,
+          indicatorColor: AppColors.primary.withValues(alpha: 0.14),
           selectedIndex: mobileSelectedIndex,
-          height: 72,
-          labelBehavior: quickNavItems.length <= 3
-              ? NavigationDestinationLabelBehavior.alwaysShow
-              : NavigationDestinationLabelBehavior.onlyShowSelected,
+          height: textScale > 1.15 ? 80 : 72,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           onDestinationSelected: (index) {
             if (showMoreMenu && index == quickNavItems.length) {
               showModalBottomSheet<void>(
@@ -128,35 +191,44 @@ class MainScaffold extends StatelessWidget {
                 showDragHandle: true,
                 builder: (sheetContext) {
                   return SafeArea(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        for (final item in navItems)
-                          ListTile(
-                            leading: Icon(
-                              item.icon,
-                              color: item.path == currentPath
-                                  ? AppColors.primary
-                                  : null,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight:
+                            MediaQuery.sizeOf(sheetContext).height * 0.75,
+                      ),
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (final item in navItems)
+                            ListTile(
+                              leading: Icon(
+                                item.icon,
+                                color: _matchesPath(currentPath, item.path)
+                                    ? AppColors.primary
+                                    : null,
+                              ),
+                              title: Text(item.label),
+                              selected: _matchesPath(currentPath, item.path),
+                              selectedTileColor: AppColors.primary.withValues(
+                                alpha: 0.08,
+                              ),
+                              onTap: () {
+                                Navigator.of(sheetContext).pop();
+                                context.go(item.path);
+                              },
                             ),
-                            title: Text(item.label),
-                            selected: item.path == currentPath,
-                            onTap: () {
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const Icon(Icons.logout_rounded),
+                            iconColor: AppColors.secondary,
+                            title: const Text('Cerrar sesión'),
+                            onTap: () async {
                               Navigator.of(sheetContext).pop();
-                              context.go(item.path);
+                              await auth.logout();
                             },
                           ),
-                        const Divider(height: 1),
-                        ListTile(
-                          leading: const Icon(Icons.logout_rounded),
-                          iconColor: AppColors.secondary,
-                          title: const Text('Cerrar sesión'),
-                          onTap: () async {
-                            Navigator.of(sheetContext).pop();
-                            await auth.logout();
-                          },
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -169,7 +241,16 @@ class MainScaffold extends StatelessWidget {
           destinations: [
             ...quickNavItems.map(
               (item) => NavigationDestination(
-                icon: Icon(item.icon),
+                icon:
+                    item.path == AppRouter.pedidos &&
+                        puedeAprobarPedidos &&
+                        pendientesCount > 0
+                    ? Badge(
+                        label: Text('$pendientesCount'),
+                        backgroundColor: Colors.orange,
+                        child: Icon(item.icon),
+                      )
+                    : Icon(item.icon),
                 selectedIcon: Icon(item.icon, color: AppColors.primary),
                 label: item.label,
               ),
@@ -191,8 +272,11 @@ class MainScaffold extends StatelessWidget {
             // ── Barra de Navegación Lateral ────────────────────────
             NavigationRail(
               extended: isWideScreen,
+              minWidth: 76,
               minExtendedWidth: 200,
               backgroundColor: Colors.white,
+              useIndicator: true,
+              indicatorColor: AppColors.primary.withValues(alpha: 0.12),
               selectedIndex: selectedIndex,
               onDestinationSelected: (index) {
                 context.go(navItems[index].path);
@@ -266,6 +350,7 @@ class MainScaffold extends StatelessWidget {
                         ),
                         Text(
                           usuario.rol.label,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: AppColors.secondary,
                             fontSize: 11,
@@ -278,21 +363,49 @@ class MainScaffold extends StatelessWidget {
               ),
               trailing: Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: IconButton(
-                  icon: const Icon(Icons.logout_rounded),
-                  tooltip: 'Cerrar sesión',
-                  color: AppColors.secondary,
-                  onPressed: () async {
-                    await auth.logout();
-                  },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (puedeAprobarPedidos && pendientesCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Badge(
+                          label: Text('$pendientesCount'),
+                          backgroundColor: Colors.orange,
+                          child: IconButton(
+                            icon: const Icon(Icons.pending_actions_rounded),
+                            tooltip: 'Pedidos por aprobar',
+                            color: Colors.orange,
+                            onPressed: () => AprobarPedidosSheet.show(context),
+                          ),
+                        ),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.logout_rounded),
+                      tooltip: 'Cerrar sesión',
+                      color: AppColors.secondary,
+                      onPressed: () async {
+                        await auth.logout();
+                      },
+                    ),
+                  ],
                 ),
               ),
               destinations: navItems
                   .map(
                     (item) => NavigationRailDestination(
-                      icon: Icon(item.icon),
+                      icon:
+                          item.path == AppRouter.pedidos &&
+                              puedeAprobarPedidos &&
+                              pendientesCount > 0
+                          ? Badge(
+                              label: Text('$pendientesCount'),
+                              backgroundColor: Colors.orange,
+                              child: Icon(item.icon),
+                            )
+                          : Icon(item.icon),
                       selectedIcon: Icon(item.icon, color: AppColors.primary),
-                      label: Text(item.label),
+                      label: Text(item.label, overflow: TextOverflow.ellipsis),
                     ),
                   )
                   .toList(),
@@ -302,7 +415,7 @@ class MainScaffold extends StatelessWidget {
             const VerticalDivider(thickness: 1, width: 1),
 
             // ── Contenido principal ───────────────────────────────
-            Expanded(child: child),
+            Expanded(child: widget.child),
           ],
         ),
       ),

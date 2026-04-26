@@ -36,44 +36,60 @@ class UsuariosPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: colors.surfaceContainerLowest,
-      body: Column(
-        children: [
-          // ── Header ──────────────────────────────────────────────────
-          _Header(
-            totalUsuarios: state.usuarios.length,
-            filtroRol: state.filtroRol,
-            onFiltroChanged: (rol) =>
-                ref.read(usuarioProvider.notifier).cambiarFiltro(rol),
-            onNuevoUsuario: () => _onNuevoUsuario(context, ref),
-          ),
-          // ── Contadores por rol ───────────────────────────────────────
-          _RolStats(usuarios: state.usuarios),
-          // ── Lista ───────────────────────────────────────────────────
-          Expanded(
-            child: state.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : state.usuariosFiltrados.isEmpty
-                ? _EmptyState(
-                    tieneUsuarios: state.usuarios.isNotEmpty,
-                    onCrear: () => _onNuevoUsuario(context, ref),
-                  )
-                : RefreshIndicator(
-                    onRefresh: ref.read(usuarioProvider.notifier).loadUsuarios,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: state.usuariosFiltrados.length,
-                      itemBuilder: (context, i) {
-                        final usuario = state.usuariosFiltrados[i];
-                        return UsuarioCard(
-                          usuario: usuario,
-                          onEdit: () => _onEditar(context, ref, usuario),
-                          onDelete: () => _onEliminar(context, ref, usuario),
-                        );
-                      },
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // ── Header ──────────────────────────────────────────────────
+            _Header(
+              totalUsuarios: state.usuarios.length,
+              filtroRol: state.filtroRol,
+              onFiltroChanged: (rol) =>
+                  ref.read(usuarioProvider.notifier).cambiarFiltro(rol),
+              onNuevoUsuario: () => _onNuevoUsuario(context, ref),
+            ),
+            // ── Contadores por rol ───────────────────────────────────────
+            _RolStats(usuarios: state.usuarios),
+            // ── Lista ───────────────────────────────────────────────────
+            Expanded(
+              child: state.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : state.usuariosFiltrados.isEmpty
+                  ? _EmptyState(
+                      tieneUsuarios: state.usuarios.isNotEmpty,
+                      onCrear: () => _onNuevoUsuario(context, ref),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: ref
+                          .read(usuarioProvider.notifier)
+                          .loadUsuarios,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                        itemCount: state.usuariosFiltrados.length,
+                        itemBuilder: (context, i) {
+                          final usuario = state.usuariosFiltrados[i];
+                          final totalAdmins = state.usuarios
+                              .where(
+                                (u) =>
+                                    u.activo &&
+                                    u.rol == RolUsuario.administrador,
+                              )
+                              .length;
+                          final canDelete =
+                              !(usuario.rol == RolUsuario.administrador &&
+                                  totalAdmins <= 1);
+                          return UsuarioCard(
+                            usuario: usuario,
+                            canDelete: canDelete,
+                            onEdit: () => _onEditar(context, ref, usuario),
+                            onDelete: () => _onEliminar(context, ref, usuario),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _onNuevoUsuario(context, ref),
@@ -254,44 +270,53 @@ class _RolStats extends StatelessWidget {
     return Container(
       color: colors.surface,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Row(
-        children: RolUsuario.values.map((rol) {
-          final count = conteos[rol] ?? 0;
-          final rolColor = _colorRol(rol, colors);
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 8,
-                  horizontal: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: rolColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$count',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: rolColor,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final perRow = width < 700 ? 2 : RolUsuario.values.length;
+          const spacing = 8.0;
+          final cardWidth = (width - (perRow - 1) * spacing) / perRow;
+
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: RolUsuario.values.map((rol) {
+              final count = conteos[rol] ?? 0;
+              final rolColor = _colorRol(rol, colors);
+              return SizedBox(
+                width: cardWidth,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: rolColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$count',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: rolColor,
+                        ),
                       ),
-                    ),
-                    Text(
-                      rol.label,
-                      style: TextStyle(fontSize: 11, color: colors.outline),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                      Text(
+                        rol.label,
+                        style: TextStyle(fontSize: 11, color: colors.outline),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            }).toList(),
           );
-        }).toList(),
+        },
       ),
     );
   }

@@ -55,6 +55,7 @@ class _CocinaPageState extends ConsumerState<CocinaPage>
 
   PreferredSizeWidget _buildAppBar(CocinaState state) {
     final cs = Theme.of(context).colorScheme;
+    final isCompact = MediaQuery.sizeOf(context).width < 430;
     return AppBar(
       elevation: 0,
       title: Row(
@@ -62,14 +63,14 @@ class _CocinaPageState extends ConsumerState<CocinaPage>
         children: [
           Icon(Icons.soup_kitchen_rounded, color: cs.onPrimary, size: 24),
           const SizedBox(width: 10),
-          const Flexible(
+          Flexible(
             child: Text(
-              'PANTALLA DE COCINA',
+              isCompact ? 'COCINA' : 'PANTALLA DE COCINA',
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-                fontSize: 18,
+                letterSpacing: isCompact ? 1.1 : 1.5,
+                fontSize: isCompact ? 16 : 18,
               ),
             ),
           ),
@@ -87,7 +88,9 @@ class _CocinaPageState extends ConsumerState<CocinaPage>
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '${state.totalPedidos} pedidos activos',
+                isCompact
+                    ? '${state.totalPedidos} activos'
+                    : '${state.totalPedidos} pedidos activos',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
@@ -102,7 +105,9 @@ class _CocinaPageState extends ConsumerState<CocinaPage>
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Center(
               child: Text(
-                'Actualizado: ${_formatTime(state.lastRefresh!)}',
+                isCompact
+                    ? _formatHoraMin(state.lastRefresh!)
+                    : 'Actualizado: ${_formatTime(state.lastRefresh!)}',
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ),
@@ -191,6 +196,8 @@ class _CocinaPageState extends ConsumerState<CocinaPage>
       children: [
         TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: [
             Tab(
               child: _TabLabel(
@@ -435,6 +442,12 @@ class _CocinaPageState extends ConsumerState<CocinaPage>
     final m = dt.minute.toString().padLeft(2, '0');
     final s = dt.second.toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+
+  String _formatHoraMin(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 }
 

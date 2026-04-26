@@ -46,6 +46,10 @@ class _ReservaFormDialogState extends State<ReservaFormDialog> {
   final _personasCtrl = TextEditingController(text: '2');
   final _notasCtrl = TextEditingController();
   final _requerimientosCtrl = TextEditingController();
+  final _nombreLocalCtrl = TextEditingController();
+  final _mantelesCtrl = TextEditingController();
+  final _colorMantelCtrl = TextEditingController();
+  final _precioCtrl = TextEditingController();
 
   TipoReserva _tipo = TipoReserva.mesa;
   EstadoReserva _estado = EstadoReserva.pendiente;
@@ -79,6 +83,12 @@ class _ReservaFormDialogState extends State<ReservaFormDialog> {
     _personasCtrl.text = reserva.numeroPersonas.toString();
     _notasCtrl.text = reserva.notas ?? '';
     _requerimientosCtrl.text = reserva.requerimientos ?? '';
+    _nombreLocalCtrl.text = reserva.nombreLocalEvento ?? '';
+    _mantelesCtrl.text = reserva.manteles ?? '';
+    _colorMantelCtrl.text = reserva.colorManteleria ?? '';
+    _precioCtrl.text = reserva.precioEstimado != null
+        ? reserva.precioEstimado!.toStringAsFixed(2)
+        : '';
 
     final match = TipoEvento.values.where((t) => t.label == reserva.tipoEvento);
     if (match.isNotEmpty) {
@@ -94,6 +104,10 @@ class _ReservaFormDialogState extends State<ReservaFormDialog> {
     _personasCtrl.dispose();
     _notasCtrl.dispose();
     _requerimientosCtrl.dispose();
+    _nombreLocalCtrl.dispose();
+    _mantelesCtrl.dispose();
+    _colorMantelCtrl.dispose();
+    _precioCtrl.dispose();
     super.dispose();
   }
 
@@ -235,6 +249,52 @@ class _ReservaFormDialogState extends State<ReservaFormDialog> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _nombreLocalCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del local / salón',
+                      hintText: 'Ej: Salón El Rosal',
+                      prefixIcon: Icon(Icons.store_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _mantelesCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Mantelería',
+                      hintText: 'Ej: Tela bordada, descartable...',
+                      prefixIcon: Icon(Icons.table_bar_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _colorMantelCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Color de mantelería',
+                      hintText: 'Ej: Blanco, rojo, azul marino...',
+                      prefixIcon: Icon(Icons.palette_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _precioCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Precio estimado (\$)',
+                      hintText: 'Ej: 350.00',
+                      prefixIcon: Icon(Icons.attach_money_rounded),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      if (double.tryParse(v.trim()) == null) {
+                        return 'Ingresa un monto válido';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 10),
                 ],
                 TextFormField(
                   controller: _requerimientosCtrl,
@@ -334,6 +394,16 @@ class _ReservaFormDialogState extends State<ReservaFormDialog> {
                 requerimientos: _requerimientosCtrl.text.trim().isNotEmpty
                     ? _requerimientosCtrl.text.trim()
                     : null,
+                nombreLocalEvento: _nombreLocalCtrl.text.trim().isNotEmpty
+                    ? _nombreLocalCtrl.text.trim()
+                    : null,
+                manteles: _mantelesCtrl.text.trim().isNotEmpty
+                    ? _mantelesCtrl.text.trim()
+                    : null,
+                colorManteleria: _colorMantelCtrl.text.trim().isNotEmpty
+                    ? _colorMantelCtrl.text.trim()
+                    : null,
+                precioEstimado: double.tryParse(_precioCtrl.text.trim()),
               ),
             );
           },
@@ -402,6 +472,10 @@ class ReservaFormResult {
   final String? notas;
   final String? tipoEvento;
   final String? requerimientos;
+  final String? nombreLocalEvento;
+  final String? manteles;
+  final String? colorManteleria;
+  final double? precioEstimado;
 
   const ReservaFormResult({
     required this.tipo,
@@ -417,6 +491,10 @@ class ReservaFormResult {
     required this.notas,
     required this.tipoEvento,
     required this.requerimientos,
+    this.nombreLocalEvento,
+    this.manteles,
+    this.colorManteleria,
+    this.precioEstimado,
   });
 }
 

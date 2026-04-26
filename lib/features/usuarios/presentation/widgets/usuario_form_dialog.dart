@@ -98,6 +98,10 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
     final adminBloqueado =
         yaExisteOtroAdministrador &&
         widget.usuario?.rol != RolUsuario.administrador;
+    final esUnicoAdmin =
+        _isEditing &&
+        widget.usuario?.rol == RolUsuario.administrador &&
+        !yaExisteOtroAdministrador;
     final rolesDisponibles = RolUsuario.values.where((rol) {
       if (rol != RolUsuario.administrador) return true;
       return !adminBloqueado;
@@ -202,10 +206,16 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
                 // Rol
                 DropdownButtonFormField<RolUsuario>(
                   value: _rol,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Rol *',
-                    prefixIcon: Icon(Icons.badge_rounded),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.badge_rounded),
+                    border: const OutlineInputBorder(),
+                    helperText: esUnicoAdmin
+                        ? 'No se puede cambiar el rol del único administrador activo.'
+                        : null,
+                    helperStyle: esUnicoAdmin
+                        ? TextStyle(color: colors.error, fontSize: 12)
+                        : null,
                   ),
                   items: rolesDisponibles
                       .map(
@@ -225,9 +235,11 @@ class _UsuarioFormDialogState extends ConsumerState<UsuarioFormDialog> {
                         ),
                       )
                       .toList(),
-                  onChanged: (v) {
-                    if (v != null) setState(() => _rol = v);
-                  },
+                  onChanged: esUnicoAdmin
+                      ? null
+                      : (v) {
+                          if (v != null) setState(() => _rol = v);
+                        },
                 ),
                 if (adminBloqueado) ...[
                   const SizedBox(height: 8),

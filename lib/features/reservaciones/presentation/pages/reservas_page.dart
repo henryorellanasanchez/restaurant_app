@@ -231,29 +231,47 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
     ReservasState state,
     List<Cotizacion> cotizacionesPendientes,
   ) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _ResumenCard(
-          label: 'Hoy',
-          value: '${state.totalHoy}',
-          color: AppColors.primary,
-          icon: Icons.event_available_outlined,
-        ),
-        _ResumenCard(
-          label: 'Pendientes',
-          value: '${state.pendientesHoy + cotizacionesPendientes.length}',
-          color: AppColors.warning,
-          icon: Icons.hourglass_bottom_rounded,
-        ),
-        _ResumenCard(
-          label: 'Eventos',
-          value: '${state.eventosHoy}',
-          color: AppColors.secondary,
-          icon: Icons.celebration_outlined,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final perRow = width < 500 ? 2 : 3;
+        const spacing = 8.0;
+        final cardWidth = (width - (perRow - 1) * spacing) / perRow;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            SizedBox(
+              width: cardWidth,
+              child: _ResumenCard(
+                label: 'Hoy',
+                value: '${state.totalHoy}',
+                color: AppColors.primary,
+                icon: Icons.event_available_outlined,
+              ),
+            ),
+            SizedBox(
+              width: cardWidth,
+              child: _ResumenCard(
+                label: 'Pendientes',
+                value: '${state.pendientesHoy + cotizacionesPendientes.length}',
+                color: AppColors.warning,
+                icon: Icons.hourglass_bottom_rounded,
+              ),
+            ),
+            SizedBox(
+              width: cardWidth,
+              child: _ResumenCard(
+                label: 'Eventos',
+                value: '${state.eventosHoy}',
+                color: AppColors.secondary,
+                icon: Icons.celebration_outlined,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -460,6 +478,8 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                                 ),
                                 child: Text(
                                   '${r.clienteNombre} · ${r.esEventoPrivado ? 'Evento' : (r.mesaNombre ?? 'Mesa')}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             )
@@ -593,6 +613,43 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
                     'Comida / requerimientos',
                     r.requerimientos!,
                   ),
+                // ── Sección Mantelería y detalles del evento ───────
+                if (r.esEventoPrivado &&
+                    (r.nombreLocalEvento != null ||
+                        r.manteles != null ||
+                        r.colorManteleria != null ||
+                        r.precioEstimado != null)) ...[
+                  const Divider(height: 20),
+                  const Text(
+                    'Detalles del evento',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  if ((r.nombreLocalEvento ?? '').isNotEmpty)
+                    _detalleItem(
+                      Icons.store_outlined,
+                      'Nombre del local',
+                      r.nombreLocalEvento!,
+                    ),
+                  if ((r.manteles ?? '').isNotEmpty)
+                    _detalleItem(
+                      Icons.table_bar_outlined,
+                      'Mantelería',
+                      r.manteles!,
+                    ),
+                  if ((r.colorManteleria ?? '').isNotEmpty)
+                    _detalleItem(
+                      Icons.palette_outlined,
+                      'Color mantelería',
+                      r.colorManteleria!,
+                    ),
+                  if (r.precioEstimado != null)
+                    _detalleItem(
+                      Icons.attach_money_rounded,
+                      'Precio estimado',
+                      '\$${r.precioEstimado!.toStringAsFixed(2)}',
+                    ),
+                ],
                 const SizedBox(height: 8),
               ],
             ),
@@ -839,6 +896,10 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
           estado: result.estado,
           tipoEvento: result.tipoEvento,
           requerimientos: result.requerimientos,
+          nombreLocalEvento: result.nombreLocalEvento,
+          manteles: result.manteles,
+          colorManteleria: result.colorManteleria,
+          precioEstimado: result.precioEstimado,
         );
 
     if (!context.mounted) return;
@@ -888,6 +949,10 @@ class _ReservasPageState extends ConsumerState<ReservasPage> {
           estado: result.estado,
           tipoEvento: result.tipoEvento,
           requerimientos: result.requerimientos,
+          nombreLocalEvento: result.nombreLocalEvento,
+          manteles: result.manteles,
+          colorManteleria: result.colorManteleria,
+          precioEstimado: result.precioEstimado,
         );
 
     if (!context.mounted) return;
@@ -921,7 +986,7 @@ class _ResumenCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 110,
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),

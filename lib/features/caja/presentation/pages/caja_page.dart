@@ -282,178 +282,187 @@ class _CajaPageState extends ConsumerState<CajaPage>
     }
 
     return Scaffold(
-      body: Column(
-        children: [
-          // ── Header con resumen ──────────────────────────────
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            color: cs.surface,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // ── Header con resumen ──────────────────────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              color: cs.surface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Caja',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Cierre comercial y control diario de ventas',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Cierre del día',
+                        onPressed: () => _mostrarCierreComercial(state),
+                        icon: const Icon(Icons.summarize_rounded),
+                      ),
+                      if (esAdmin)
+                        IconButton(
+                          tooltip: 'Configuración Fiscal (SRI)',
+                          onPressed: () =>
+                              ConfiguracionFiscalDialog.show(context),
+                          icon: const Icon(Icons.receipt_long_rounded),
+                        ),
+                      IconButton(
+                        tooltip: 'Actualizar',
+                        onPressed: () {
+                          ref.read(cajaProvider.notifier).loadCaja();
+                          ref.read(cajaProvider.notifier).loadHistorial();
+                        },
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Tarjetas de resumen
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.maxWidth;
+                      final perRow = width < 700 ? 2 : 4;
+                      const spacing = 8.0;
+                      final cardWidth =
+                          (width - (perRow - 1) * spacing) / perRow;
+                      return Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
                         children: [
-                          Text(
-                            'Caja',
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
+                          SizedBox(
+                            width: cardWidth,
+                            child: _ResumenCard(
+                              icon: Icons.pending_actions_outlined,
+                              label: 'Por cobrar',
+                              value: '${state.totalPedidosPendientes}',
+                              color: cs.tertiary,
                             ),
                           ),
-                          Text(
-                            'Cierre comercial y control diario de ventas',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
+                          SizedBox(
+                            width: cardWidth,
+                            child: _ResumenCard(
+                              icon: Icons.receipt_outlined,
+                              label: 'Ventas hoy',
+                              value: '${state.cantidadVentasHoy}',
+                              color: cs.primary,
+                            ),
+                          ),
+                          SizedBox(
+                            width: cardWidth,
+                            child: _ResumenCard(
+                              icon: Icons.trending_up_rounded,
+                              label: 'Ticket prom.',
+                              value: _moneda.format(state.ticketPromedioHoy),
+                              color: Colors.orange,
+                            ),
+                          ),
+                          SizedBox(
+                            width: cardWidth,
+                            child: _ResumenCard(
+                              icon: Icons.attach_money,
+                              label: 'Total hoy',
+                              value: _moneda.format(state.totalVentasHoy),
+                              color: Colors.green,
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Cierre del día',
-                      onPressed: () => _mostrarCierreComercial(state),
-                      icon: const Icon(Icons.summarize_rounded),
-                    ),
-                    if (esAdmin)
-                      IconButton(
-                        tooltip: 'Configuración Fiscal (SRI)',
-                        onPressed: () =>
-                            ConfiguracionFiscalDialog.show(context),
-                        icon: const Icon(Icons.receipt_long_rounded),
-                      ),
-                    IconButton(
-                      tooltip: 'Actualizar',
-                      onPressed: () {
-                        ref.read(cajaProvider.notifier).loadCaja();
-                        ref.read(cajaProvider.notifier).loadHistorial();
-                      },
-                      icon: const Icon(Icons.refresh_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Tarjetas de resumen
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.maxWidth;
-                    final perRow = width < 700 ? 2 : 4;
-                    const spacing = 8.0;
-                    final cardWidth = (width - (perRow - 1) * spacing) / perRow;
-                    return Wrap(
-                      spacing: spacing,
-                      runSpacing: spacing,
-                      children: [
-                        SizedBox(
-                          width: cardWidth,
-                          child: _ResumenCard(
-                            icon: Icons.pending_actions_outlined,
-                            label: 'Por cobrar',
-                            value: '${state.totalPedidosPendientes}',
-                            color: cs.tertiary,
-                          ),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: _ResumenCard(
-                            icon: Icons.receipt_outlined,
-                            label: 'Ventas hoy',
-                            value: '${state.cantidadVentasHoy}',
-                            color: cs.primary,
-                          ),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: _ResumenCard(
-                            icon: Icons.trending_up_rounded,
-                            label: 'Ticket prom.',
-                            value: _moneda.format(state.ticketPromedioHoy),
-                            color: Colors.orange,
-                          ),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: _ResumenCard(
-                            icon: Icons.attach_money,
-                            label: 'Total hoy',
-                            value: _moneda.format(state.totalVentasHoy),
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 4),
-                // Desglose por método
-                if (state.ventasPorMetodo.isNotEmpty)
-                  Wrap(
-                    spacing: 6,
-                    children: state.ventasPorMetodo.entries
-                        .map(
-                          (e) => Chip(
-                            avatar: Icon(_iconForMetodo(e.key), size: 14),
-                            label: Text(
-                              '${e.key.label}: \$${e.value.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 11),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  // Desglose por método
+                  if (state.ventasPorMetodo.isNotEmpty)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: state.ventasPorMetodo.entries
+                          .map(
+                            (e) => Chip(
+                              avatar: Icon(_iconForMetodo(e.key), size: 14),
+                              label: Text(
+                                '${e.key.label}: ${_moneda.format(e.value)}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                             ),
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        )
-                        .toList(),
-                  ),
-              ],
+                          )
+                          .toList(),
+                    ),
+                ],
+              ),
             ),
-          ),
 
-          // ── TabBar ─────────────────────────────────────────
-          ColoredBox(
-            color: cs.surface,
-            child: TabBar(
-              controller: _tabController,
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.point_of_sale_outlined, size: 16),
-                      const SizedBox(width: 6),
-                      const Text('Por cobrar'),
-                      if (state.totalPedidosPendientes > 0) ...[
+            // ── TabBar ─────────────────────────────────────────
+            ColoredBox(
+              color: cs.surface,
+              child: TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.point_of_sale_outlined, size: 16),
                         const SizedBox(width: 6),
-                        Badge(label: Text('${state.totalPedidosPendientes}')),
+                        const Text('Por cobrar'),
+                        if (state.totalPedidosPendientes > 0) ...[
+                          const SizedBox(width: 6),
+                          Badge(label: Text('${state.totalPedidosPendientes}')),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                const Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.history, size: 16),
-                      SizedBox(width: 6),
-                      Text('Historial'),
-                    ],
+                  const Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.history, size: 16),
+                        SizedBox(width: 6),
+                        Text('Historial'),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          // ── Contenido ──────────────────────────────────────
-          Expanded(
-            child: state.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tabController,
-                    children: [_buildPorCobrar(state), _buildHistorial(state)],
-                  ),
-          ),
-        ],
+            // ── Contenido ──────────────────────────────────────
+            Expanded(
+              child: state.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildPorCobrar(state),
+                        _buildHistorial(state),
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -514,22 +523,25 @@ class _CajaPageState extends ConsumerState<CajaPage>
         // Toggle hoy / todas
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              const Text('Mostrar:'),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                label: const Text('Hoy'),
-                selected: !_verTodas,
-                onSelected: (_) => setState(() => _verTodas = false),
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: const Text('Todas'),
-                selected: _verTodas,
-                onSelected: (_) => setState(() => _verTodas = true),
-              ),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Text('Mostrar:'),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Hoy'),
+                  selected: !_verTodas,
+                  onSelected: (_) => setState(() => _verTodas = false),
+                ),
+                const SizedBox(width: 6),
+                ChoiceChip(
+                  label: const Text('Todas'),
+                  selected: _verTodas,
+                  onSelected: (_) => setState(() => _verTodas = true),
+                ),
+              ],
+            ),
           ),
         ),
         if (ventas.isEmpty)

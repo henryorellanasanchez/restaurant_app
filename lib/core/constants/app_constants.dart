@@ -22,14 +22,16 @@ class AppConstants {
   // ── Contacto ─────────────────────────────────────────────────────────────
   static const String facebookUrl =
       'https://www.facebook.com/profile.php?id=100089948505536';
-  static const String contactPhone = '809-000-0000';
-  static const String contactWhatsapp = '809-000-0000';
-  static const String contactEmail = 'contacto@lapena.com';
+  static const String contactPhone = '099 464 5989';
+  static const String contactWhatsapp = '0994645989';
+  static const String contactEmail = 'barhouse69@gmail.com';
+  static const String contactInstagram =
+      'https://www.instagram.com/bar_house69/';
 
   // ── Base de datos ────────────────────────────────────────────────────────
   /// Nombre único de la base SQLite compartido por móvil y desktop.
   static const String databaseName = 'data.db';
-  static const int databaseVersion = 12;
+  static const int databaseVersion = 17;
 
   // ── Facturación electrónica / SRI ───────────────────────────────────────
   /// Endpoint base del backend puente para facturación electrónica.
@@ -41,9 +43,12 @@ class AppConstants {
 
   // ── Menú público (QR) ─────────────────────────────────────────────
   /// URL base del menú público para generar QR.
-  /// Ejemplo: https://menu.restaurante.com/menu-public
   static const String publicMenuBaseUrl =
       'https://menu.restaurante.com/menu-public';
+
+  /// URL base para el QR de pedido por mesa (clientes piden desde su mesa).
+  static const String publicOrderBaseUrl =
+      'https://menu.restaurante.com/pedido-mesa';
 
   // ── Multi-restaurante ────────────────────────────────────────────────────
   /// ID del restaurante La Peña.

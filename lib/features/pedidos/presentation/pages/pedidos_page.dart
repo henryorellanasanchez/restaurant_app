@@ -162,10 +162,47 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
         ? state.pedidos
         : state.pedidos.where((p) => p.estado == _filtroEstado).toList();
 
+    if (pedidosFiltrados.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () =>
+            ref.read(pedidosProvider.notifier).loadPedidosActivos(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 96, 24, 120),
+          children: const [
+            Icon(
+              Icons.filter_alt_off_rounded,
+              size: 56,
+              color: AppColors.textHint,
+            ),
+            SizedBox(height: 14),
+            Center(
+              child: Text(
+                'No hay pedidos con este filtro',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            SizedBox(height: 6),
+            Center(
+              child: Text(
+                'Prueba otro estado o actualiza para recargar.',
+                style: TextStyle(color: AppColors.textHint),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: () => ref.read(pedidosProvider.notifier).loadPedidosActivos(),
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         itemCount: pedidosFiltrados.length,
         itemBuilder: (context, index) {
           final pedido = pedidosFiltrados[index];
@@ -415,6 +452,8 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
   /// Retorna los estados siguientes lógicos para un pedido.
   List<EstadoPedido> _getNextStates(EstadoPedido current) {
     switch (current) {
+      case EstadoPedido.pendienteAprobacion:
+        return [EstadoPedido.creado];
       case EstadoPedido.creado:
         return [EstadoPedido.aceptado];
       case EstadoPedido.aceptado:
@@ -430,6 +469,8 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
 
   Color _getColorByEstado(EstadoPedido estado) {
     switch (estado) {
+      case EstadoPedido.pendienteAprobacion:
+        return Colors.orange;
       case EstadoPedido.creado:
         return AppColors.pedidoCreado;
       case EstadoPedido.aceptado:
@@ -445,6 +486,8 @@ class _PedidosPageState extends ConsumerState<PedidosPage> {
 
   IconData _getIconByEstado(EstadoPedido estado) {
     switch (estado) {
+      case EstadoPedido.pendienteAprobacion:
+        return Icons.pending_actions_rounded;
       case EstadoPedido.creado:
         return Icons.fiber_new_rounded;
       case EstadoPedido.aceptado:

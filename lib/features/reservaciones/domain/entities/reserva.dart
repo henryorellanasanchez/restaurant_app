@@ -21,6 +21,12 @@ class Reserva extends Equatable {
   final String? requerimientos;
   final DateTime createdAt;
 
+  // ── Mantelería y detalles del evento ───────────────────────────
+  final String? nombreLocalEvento;
+  final String? manteles;
+  final String? colorManteleria;
+  final double? precioEstimado;
+
   const Reserva({
     required this.id,
     required this.restaurantId,
@@ -39,6 +45,10 @@ class Reserva extends Equatable {
     this.notas,
     this.requerimientos,
     required this.createdAt,
+    this.nombreLocalEvento,
+    this.manteles,
+    this.colorManteleria,
+    this.precioEstimado,
   });
 
   bool get esEventoPrivado => tipo == TipoReserva.local;
@@ -62,6 +72,10 @@ class Reserva extends Equatable {
     String? notas,
     String? requerimientos,
     DateTime? createdAt,
+    Object? nombreLocalEvento = _keep,
+    Object? manteles = _keep,
+    Object? colorManteleria = _keep,
+    Object? precioEstimado = _keep,
   }) {
     return Reserva(
       id: id ?? this.id,
@@ -81,8 +95,22 @@ class Reserva extends Equatable {
       notas: notas ?? this.notas,
       requerimientos: requerimientos ?? this.requerimientos,
       createdAt: createdAt ?? this.createdAt,
+      nombreLocalEvento: identical(nombreLocalEvento, _keep)
+          ? this.nombreLocalEvento
+          : nombreLocalEvento as String?,
+      manteles: identical(manteles, _keep)
+          ? this.manteles
+          : manteles as String?,
+      colorManteleria: identical(colorManteleria, _keep)
+          ? this.colorManteleria
+          : colorManteleria as String?,
+      precioEstimado: identical(precioEstimado, _keep)
+          ? this.precioEstimado
+          : precioEstimado as double?,
     );
   }
+
+  static const Object _keep = Object();
 
   @override
   List<Object?> get props => [
@@ -103,5 +131,9 @@ class Reserva extends Equatable {
     notas,
     requerimientos,
     createdAt,
+    nombreLocalEvento,
+    manteles,
+    colorManteleria,
+    precioEstimado,
   ];
 }

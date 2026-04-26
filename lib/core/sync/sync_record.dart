@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Enumeración de operaciones de sincronización.
 enum SyncOperation { insert, update, delete }
 
@@ -33,7 +35,7 @@ class SyncRecord {
       'tabla': tabla,
       'registro_id': registroId,
       'operacion': operacion.name,
-      'datos': datos?.toString(),
+      'datos': datos == null ? null : jsonEncode(datos),
       'sincronizado': sincronizado ? 1 : 0,
       'intentos': intentos,
       'created_at': createdAt.toIso8601String(),
@@ -48,9 +50,31 @@ class SyncRecord {
       operacion: SyncOperation.values.firstWhere(
         (e) => e.name == map['operacion'],
       ),
+      datos: _parseDatos(map['datos']),
       sincronizado: (map['sincronizado'] as int) == 1,
       intentos: map['intentos'] as int? ?? 0,
       createdAt: DateTime.parse(map['created_at'] as String),
     );
+  }
+
+  static Map<String, dynamic>? _parseDatos(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is! String) return null;
+
+    final text = raw.trim();
+    if (text.isEmpty || text == 'null') return null;
+
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v));
+      }
+    } catch (_) {
+      // Compatibilidad con registros legacy guardados como toString().
+      return {'_legacy_raw': text};
+    }
+
+    return null;
   }
 }

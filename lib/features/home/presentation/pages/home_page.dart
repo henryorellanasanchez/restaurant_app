@@ -90,6 +90,8 @@ class _HomePageState extends ConsumerState<HomePage> {
       symbol: AppConstants.currencySymbol,
       decimalDigits: 2,
     );
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = width < 600 ? 16.0 : 24.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -102,13 +104,22 @@ class _HomePageState extends ConsumerState<HomePage> {
               ref.read(mesasProvider.notifier).loadMesas();
               ref.read(pedidosProvider.notifier).loadPedidos();
               if (puedeVerFinanzas) ref.invalidate(_ventasHoyProvider);
+              if (puedeVerCotizaciones) {
+                ref.invalidate(_cotizacionesCountProvider);
+              }
+              ref.invalidate(_updateCheckProvider);
             },
           ),
           const SizedBox(width: 8),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          width < 600 ? 16 : 24,
+          horizontalPadding,
+          24,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -207,6 +218,10 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
             const SizedBox(height: 20),
             _buildQuickActions(context, rol),
+            if (rol.esAdmin) ...[
+              const SizedBox(height: 20),
+              _buildAdminPanel(context),
+            ],
           ],
         ),
       ),
@@ -260,12 +275,16 @@ class _HomePageState extends ConsumerState<HomePage> {
                       children: [
                         Text(
                           'La Peña Bar & Restaurant',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           saludo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: AppColors.textSecondary),
                         ),
@@ -375,6 +394,89 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (width >= 900) return 3;
     if (width >= 600) return 2;
     return 1;
+  }
+
+  Widget _buildAdminPanel(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Administración',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        InkWell(
+          onTap: () => context.go(AppRouter.empresaConfig),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  AppColors.primary.withValues(alpha: 0.78),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.25),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.business_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Información de la Empresa',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Logo, nombre, propietario, contactos y más',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white70,
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

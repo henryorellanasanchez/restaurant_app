@@ -28,6 +28,8 @@ class DatabaseTables {
     _createProductoIngredientesTable,
     _createSyncLogTable,
     _createSriSecuencialesTable,
+    _createPublicConfigTable,
+    _createClientesTable,
   ];
 
   // ── Restaurantes ───────────────────────────────────────────────────
@@ -276,6 +278,10 @@ class DatabaseTables {
       cliente_email TEXT NOT NULL,
       notas TEXT,
       requerimientos TEXT,
+      nombre_local_evento TEXT,
+      manteles TEXT,
+      color_manteleria TEXT,
+      precio_estimado REAL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (restaurant_id) REFERENCES restaurantes(id),
       FOREIGN KEY (mesa_id) REFERENCES mesas(id)
@@ -318,6 +324,62 @@ class DatabaseTables {
       restaurant_id TEXT NOT NULL,
       ultimo_secuencial INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (id, restaurant_id)
+    )
+  ''';
+
+  // ── Configuración de Página Pública ─────────────────────────────────
+  static const String _createPublicConfigTable = '''
+    CREATE TABLE IF NOT EXISTS public_config (
+      restaurant_id TEXT PRIMARY KEY,
+      slogan TEXT NOT NULL DEFAULT '',
+      descripcion TEXT NOT NULL DEFAULT '',
+      telefono TEXT NOT NULL DEFAULT '',
+      whatsapp TEXT NOT NULL DEFAULT '',
+      direccion TEXT NOT NULL DEFAULT '',
+      horarios TEXT NOT NULL DEFAULT '[]',
+      facebook TEXT NOT NULL DEFAULT '',
+      instagram TEXT NOT NULL DEFAULT '',
+      mostrar_boton_menu INTEGER NOT NULL DEFAULT 1,
+      mostrar_boton_reservas INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      exp1_titulo TEXT NOT NULL DEFAULT 'Gastronomía Auténtica',
+      exp1_desc TEXT NOT NULL DEFAULT 'Recetas tradicionales elaboradas con ingredientes frescos de temporada.',
+      exp2_titulo TEXT NOT NULL DEFAULT 'Ambiente Familiar',
+      exp2_desc TEXT NOT NULL DEFAULT 'Un espacio cálido y acogedor ideal para toda ocasión especial.',
+      exp3_titulo TEXT NOT NULL DEFAULT 'Servicio Excepcional',
+      exp3_desc TEXT NOT NULL DEFAULT 'Atención personalizada que supera las expectativas de cada visita.',
+      titulo_menu TEXT NOT NULL DEFAULT 'Nuestro Menú',
+      subtitulo_menu TEXT NOT NULL DEFAULT 'Platos elaborados con ingredientes frescos de temporada',
+      titulo_reservas TEXT NOT NULL DEFAULT 'Reserva tu Mesa',
+      subtitulo_reservas TEXT NOT NULL DEFAULT 'Asegura tu lugar para una experiencia gastronómica especial',
+      map_url TEXT NOT NULL DEFAULT 'https://maps.app.goo.gl/KL4cFAxBxDDKmgaS9',
+      map_lat REAL NOT NULL DEFAULT -2.9721229,
+      map_lng REAL NOT NULL DEFAULT -78.437791,
+      nombre_negocio TEXT NOT NULL DEFAULT '',
+      propietario TEXT NOT NULL DEFAULT '',
+      email_contacto TEXT NOT NULL DEFAULT '',
+      email_secundario TEXT NOT NULL DEFAULT '',
+      telefono_secundario TEXT NOT NULL DEFAULT '',
+      logo_url TEXT NOT NULL DEFAULT ''
+    )
+  ''';
+
+  // ── Clientes ──────────────────────────────────────────────────────
+  static const String _createClientesTable = '''
+    CREATE TABLE IF NOT EXISTS clientes (
+      cedula TEXT PRIMARY KEY,
+      restaurant_id TEXT NOT NULL,
+      nombre TEXT NOT NULL,
+      apellido TEXT,
+      telefono TEXT,
+      email TEXT,
+      direccion TEXT,
+      fecha_nacimiento TEXT,
+      notas TEXT,
+      activo INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (restaurant_id) REFERENCES restaurantes(id)
     )
   ''';
 

@@ -7,9 +7,8 @@ import 'package:restaurant_app/core/sync/sync_record.dart';
 /// Registra todas las operaciones CRUD en [sync_log] para que
 /// puedan sincronizarse con Firebase cuando haya conexión.
 ///
-/// Actualmente funciona como logger de operaciones pendientes.
-/// La integración real con Firebase se implementará cuando
-/// se active la sincronización en la nube.
+/// El envío remoto se ejecuta desde [SyncCloudService] y luego se marca
+/// cada registro como sincronizado usando este manager.
 class SyncManager {
   final DatabaseHelper _dbHelper;
   static const _uuid = Uuid();

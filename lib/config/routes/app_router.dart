@@ -20,6 +20,12 @@ import 'package:restaurant_app/features/home/presentation/widgets/main_scaffold.
 import 'package:restaurant_app/features/menu/presentation/pages/menu_public_page.dart';
 import 'package:restaurant_app/features/reservaciones/presentation/pages/reservas_page.dart';
 import 'package:restaurant_app/features/reservaciones/presentation/pages/reservas_public_page.dart';
+import 'package:restaurant_app/features/pagina_publica/presentation/pages/restaurante_public_page.dart';
+import 'package:restaurant_app/features/pagina_publica/presentation/pages/restaurante_config_page.dart';
+import 'package:restaurant_app/features/backup/presentation/pages/backup_page.dart';
+import 'package:restaurant_app/features/clientes/presentation/pages/clientes_page.dart';
+import 'package:restaurant_app/features/pedidos/presentation/pages/pedido_mesa_publica_page.dart';
+import 'package:restaurant_app/features/home/presentation/pages/empresa_config_page.dart';
 
 /// Configuración de rutas de la aplicación.
 ///
@@ -47,6 +53,14 @@ class AppRouter {
   static const String reportes = '/reportes';
   static const String usuarios = '/usuarios';
   static const String sincronizacion = '/sincronizacion';
+  static const String restaurantePublico = '/restaurante';
+  static const String restauranteConfig = '/restaurante-config';
+  static const String driveBackup = '/drive-backup';
+  static const String clientes = '/clientes';
+  static const String empresaConfig = '/empresa-config';
+
+  /// Ruta pública para que el cliente haga su pedido desde la mesa (via QR).
+  static const String pedidoMesa = '/pedido-mesa';
 
   /// Retorna la ruta inicial según el rol del usuario.
   static String homeRouteForRole(RolUsuario rol) {
@@ -70,6 +84,10 @@ class AppRouter {
         location.startsWith('$reservasPublico/')) {
       return true;
     }
+    if (location == restaurantePublico ||
+        location.startsWith('$restaurantePublico/')) {
+      return true;
+    }
 
     final accessByRoute = <String, bool Function(RolUsuario)>{
       home: (r) => r.puedeVerInicio,
@@ -82,6 +100,7 @@ class AppRouter {
       caja: (r) => r.puedeGestionarCaja,
       reportes: (r) => r.puedeVerReportes,
       usuarios: (r) => r.puedeGestionarUsuarios,
+      clientes: (r) => r.puedeGestionarClientes,
       sincronizacion: (r) => r.puedeSincronizar,
     };
 
@@ -104,20 +123,26 @@ class AppRouter {
       final activation = sl<ActivationChangeNotifier>();
       final isLoggedIn = auth.isAuthenticated;
       final isLoginRoute = state.matchedLocation == login;
+      final loc = state.matchedLocation;
 
+      // Las rutas públicas son accesibles siempre, sin importar activación
+      // ni autenticación (clientes externos que escanean QR, por ejemplo).
+      final isPublicRoute =
+          loc == menuPublico ||
+          loc.startsWith('$menuPublico/') ||
+          loc == reservasPublico ||
+          loc.startsWith('$reservasPublico/') ||
+          loc == restaurantePublico ||
+          loc.startsWith('$restaurantePublico/') ||
+          loc == pedidoMesa ||
+          loc.startsWith('$pedidoMesa/');
+
+      if (isPublicRoute) return null;
+
+      // A partir de aquí la ruta requiere la app activada.
       if (!activation.canAccessApp && !isLoginRoute) return login;
       if (!activation.canAccessApp && isLoginRoute) return null;
 
-      if (!isLoggedIn &&
-          (state.matchedLocation == menuPublico ||
-              state.matchedLocation.startsWith('$menuPublico/'))) {
-        return null;
-      }
-      if (!isLoggedIn &&
-          (state.matchedLocation == reservasPublico ||
-              state.matchedLocation.startsWith('$reservasPublico/'))) {
-        return null;
-      }
       if (!isLoggedIn && !isLoginRoute) return login;
       if (isLoggedIn && isLoginRoute) {
         return homeRouteForRole(auth.usuario!.rol);
@@ -151,7 +176,26 @@ class AppRouter {
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: ReservasPublicPage()),
       ),
-
+      // ── Página pública del restaurante (sin autenticación) ────────
+      GoRoute(
+        path: restaurantePublico,
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: RestaurantePublicPage()),
+      ),
+      // ── Pedido por mesa via QR (sin autenticación) ───────────────
+      GoRoute(
+        path: pedidoMesa,
+        pageBuilder: (context, state) {
+          final mesaId = state.uri.queryParameters['mesa'] ?? '';
+          final mesaNombre = state.uri.queryParameters['nombre'] ?? '';
+          return NoTransitionPage(
+            child: PedidoMesaPublicaPage(
+              mesaId: mesaId,
+              mesaNombre: mesaNombre,
+            ),
+          );
+        },
+      ),
       // Shell route: Mantiene el scaffold principal con NavigationRail
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
@@ -213,9 +257,29 @@ class AppRouter {
                 const NoTransitionPage(child: UsuariosPage()),
           ),
           GoRoute(
+            path: clientes,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: ClientesPage()),
+          ),
+          GoRoute(
             path: sincronizacion,
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: SincronizacionPage()),
+          ),
+          GoRoute(
+            path: restauranteConfig,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: RestauranteConfigPage()),
+          ),
+          GoRoute(
+            path: empresaConfig,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: EmpresaConfigPage()),
+          ),
+          GoRoute(
+            path: driveBackup,
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: BackupPage()),
           ),
         ],
       ),

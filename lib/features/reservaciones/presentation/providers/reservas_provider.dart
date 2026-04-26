@@ -103,6 +103,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
     EstadoReserva estado = EstadoReserva.pendiente,
     String? tipoEvento,
     String? requerimientos,
+    String? nombreLocalEvento,
+    String? manteles,
+    String? colorManteleria,
+    double? precioEstimado,
   }) {
     return _guardarReserva(
       tipo: tipo,
@@ -119,6 +123,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
       estado: estado,
       tipoEvento: tipoEvento,
       requerimientos: requerimientos,
+      nombreLocalEvento: nombreLocalEvento,
+      manteles: manteles,
+      colorManteleria: colorManteleria,
+      precioEstimado: precioEstimado,
     );
   }
 
@@ -138,6 +146,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
     EstadoReserva estado = EstadoReserva.pendiente,
     String? tipoEvento,
     String? requerimientos,
+    String? nombreLocalEvento,
+    String? manteles,
+    String? colorManteleria,
+    double? precioEstimado,
   }) {
     return _guardarReserva(
       reservaId: reservaId,
@@ -155,6 +167,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
       estado: estado,
       tipoEvento: tipoEvento,
       requerimientos: requerimientos,
+      nombreLocalEvento: nombreLocalEvento,
+      manteles: manteles,
+      colorManteleria: colorManteleria,
+      precioEstimado: precioEstimado,
     );
   }
 
@@ -174,6 +190,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
     EstadoReserva estado = EstadoReserva.pendiente,
     String? tipoEvento,
     String? requerimientos,
+    String? nombreLocalEvento,
+    String? manteles,
+    String? colorManteleria,
+    double? precioEstimado,
   }) async {
     state = state.copyWith(errorMessage: null);
 
@@ -274,6 +294,10 @@ class ReservasNotifier extends StateNotifier<ReservasState> {
       notas: notas,
       requerimientos: requerimientos,
       createdAt: DateTime.now(),
+      nombreLocalEvento: nombreLocalEvento,
+      manteles: manteles,
+      colorManteleria: colorManteleria,
+      precioEstimado: precioEstimado,
     );
 
     final result = reservaId == null

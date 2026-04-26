@@ -40,6 +40,8 @@ class PedidoCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       pedido.mesaNombre ?? 'Sin mesa',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: colorEstado,
@@ -57,6 +59,8 @@ class PedidoCard extends StatelessWidget {
                     ),
                     child: Text(
                       pedido.estado.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -159,6 +163,8 @@ class PedidoCard extends StatelessWidget {
 
   Color _getColorByEstado(EstadoPedido estado) {
     switch (estado) {
+      case EstadoPedido.pendienteAprobacion:
+        return Colors.orange;
       case EstadoPedido.creado:
         return AppColors.pedidoCreado;
       case EstadoPedido.aceptado:
@@ -188,9 +194,16 @@ class PedidoCard extends StatelessWidget {
 
   int _parseMins(String time) {
     // Simple parser for "Xh Ym" or "Xm"
-    final parts = time.replaceAll('h', '').replaceAll('m', '').split(' ');
+    final parts = time
+        .replaceAll('h', '')
+        .replaceAll('m', '')
+        .split(' ')
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
     if (parts.length == 2) {
-      return int.tryParse(parts[0]) ?? 0 * 60 + (int.tryParse(parts[1]) ?? 0);
+      final hours = int.tryParse(parts[0]) ?? 0;
+      final mins = int.tryParse(parts[1]) ?? 0;
+      return (hours * 60) + mins;
     }
     return int.tryParse(parts[0]) ?? 0;
   }

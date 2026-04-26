@@ -21,6 +21,10 @@ class ReservaModel extends Reserva {
     super.notas,
     super.requerimientos,
     required super.createdAt,
+    super.nombreLocalEvento,
+    super.manteles,
+    super.colorManteleria,
+    super.precioEstimado,
   });
 
   factory ReservaModel.fromMap(Map<String, dynamic> map) {
@@ -44,6 +48,10 @@ class ReservaModel extends Reserva {
       notas: map['notas'] as String?,
       requerimientos: map['requerimientos'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
+      nombreLocalEvento: map['nombre_local_evento'] as String?,
+      manteles: map['manteles'] as String?,
+      colorManteleria: map['color_manteleria'] as String?,
+      precioEstimado: (map['precio_estimado'] as num?)?.toDouble(),
     );
   }
 
@@ -65,6 +73,10 @@ class ReservaModel extends Reserva {
       'notas': notas,
       'requerimientos': requerimientos,
       'created_at': createdAt.toIso8601String(),
+      'nombre_local_evento': nombreLocalEvento,
+      'manteles': manteles,
+      'color_manteleria': colorManteleria,
+      'precio_estimado': precioEstimado,
     };
   }
 
@@ -87,6 +99,10 @@ class ReservaModel extends Reserva {
       notas: entity.notas,
       requerimientos: entity.requerimientos,
       createdAt: entity.createdAt,
+      nombreLocalEvento: entity.nombreLocalEvento,
+      manteles: entity.manteles,
+      colorManteleria: entity.colorManteleria,
+      precioEstimado: entity.precioEstimado,
     );
   }
 }
